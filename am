@@ -30,6 +30,7 @@ RECORDFILE=
 UPLOAD="no"
 VERBOSE="no"
 CATUSB="no"
+STTY="no"
 RECORDUSB="no"
 COMPILE="yes"
 
@@ -67,6 +68,8 @@ function usage {
     echo "  -B --fqbn       Board Fully Qualified Name, like 'arduino:avr:uno'"
     echo "  -d --builddir   Build directory"
     echo "  -c --catusb     Display (continually) what Arduino writes on USB"
+    echo "     --stty       Tune stty properly for later communication (implied"
+    echo "                  by --catusb)"
     echo "  -r --recordusb  Write USB (continually) to a file (implies -c)"
     echo "     --recordfile Output file if -r option is set"
     echo "  -n --nocompile  Don't compile code"
@@ -74,7 +77,7 @@ function usage {
     echo "                  will try to infere it from source file. If it"
     echo "                  fails, it'll fallback to 9600."
     echo "                  This option is useful only if USB is read"
-    echo "                  (-c option is set)"
+    echo "                  (-c or --stty option set)"
     exit 1
 }
 
@@ -83,7 +86,7 @@ function version {
     exit
 }
 
-OPTS=$(getopt -o hVvub:p:s:B:d:crn --long help,version,verbose,upload,board:,port:,speed:,fqbn:,builddir:,catusb,recordusb,nocompile,readspeed:,recordfile: -n 'am' -- "$@")
+OPTS=$(getopt -o hVvub:p:s:B:d:crn --long help,version,verbose,upload,board:,port:,speed:,fqbn:,builddir:,catusb,stty,recordusb,nocompile,readspeed:,recordfile: -n 'am' -- "$@")
 
 eval set -- "$OPTS"
 
@@ -103,6 +106,7 @@ while true; do
     -n | --nocompile )  COMPILE="no"; shift ;;
          --readspeed )  READSPEED="$2"; shift 2 ;;
          --recordfile ) RECORDFILE="$2"; shift 2 ;;
+         --stty )       STTY="yes"; shift ;;
     -- ) shift; break ;;
     * ) break ;;
   esac
@@ -286,9 +290,7 @@ if [ "${UPLOAD}" == "yes" ]; then
       -Uflash:w:"${BUILDDIR}/${FILEBASENAME}".hex:i
 fi
 
-if [ "${CATUSB}" == "yes" ]; then
-    echo "-- Read usb (Ctrl-C to quit)"
-
+if [ "${CATUSB}" == "yes" ] || [ "${STTY}" == "yes" ]; then
     if [ -z "${READSPEED}" ]; then
         TFILE=$(mktemp)
         gcc -fpreprocessed -dD -x c++ -E "${FILE}" > "${TFILE}"
@@ -302,7 +304,11 @@ if [ "${CATUSB}" == "yes" ]; then
     fi
 
     stty -F "${PORT}" -hupcl -echo "${READSPEED}"
+    echo "-- usb setup with speed ${READSPEED}"
+fi
 
+if [ "${CATUSB}" == "yes" ]; then
+    echo "-- Read usb (Ctrl-C to quit)"
     DISPLAYSEP=yes
     {
         echo "speed=${READSPEED}"

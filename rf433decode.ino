@@ -282,14 +282,14 @@ struct Band {
     void init(unsigned long d);
 };
 
-void Band::init(unsigned long d) {
+inline void Band::init(unsigned long d) {
     mid = d;
     inf = d - (d >> 2);
     sup = d + (d >> 2);
     got_it = false;
 }
 
-bool Band::test_value(unsigned long d) {
+inline bool Band::test_value(unsigned long d) {
     if (!mid) {
         init(d);
         got_it = true;
@@ -396,28 +396,31 @@ bool Rail::eat(unsigned long d) {
 }
 
 void Rail::rail_debug() const {
-    serial_printf("bits=%2i, v=0x%08lx, rail status=", index, recorded);
+    serial_printf("      \"bits\":%i,\"v\":0x%08lx,\"railstatus\":",
+                  index, recorded);
     if (status == RAIL_OPEN) {
-        serial_printf("open\n  ");
+        serial_printf("\"open\",");
     } else if (status == RAIL_FULL) {
-        serial_printf("full\n  ");
+        serial_printf("\"full\",");
     } else if (status == RAIL_STP_RCVD) {
-        serial_printf("stop received\n  ");
+        serial_printf("\"stop received\",");
     } else if (status == RAIL_CLOSED) {
-        serial_printf("closed\n  ");
+        serial_printf("\"closed\",");
     } else if (status == RAIL_ERROR) {
-        serial_printf("error\n  ");
+        serial_printf("\"error\",");
     } else {
-        serial_printf("unknown\n  ");
+        serial_printf("\"unknown\",");
     }
+    serial_printf("\"n\":%d,\n", band[0].mid == band[1].mid ? 1 : 2);
     for (byte i = 0; i < 2; ++i) {
-        serial_printf("  band %d: inf=%lu, mid=%lu, sup=%lu",
-                      i, band[i].inf, band[i].mid, band[i].sup);
-        serial_printf("%s", i == 0 ? "\n  " : "\n");
+        serial_printf("      \"band%d\":{", i);
+        serial_printf("\"inf\":%lu,\"mid\":%lu,\"sup\":%lu",
+                      band[i].inf, band[i].mid, band[i].sup);
         if (band[0].mid == band[1].mid) {
-            serial_printf("  band 1: *****\n");
+            serial_printf("},\n      \"band1\":\"*****\"\n");
             break;
         }
+        serial_printf("}%s\n", i == 1 ? "" : ",");
     }
 }
 
@@ -484,29 +487,29 @@ void Track::track_eat(byte r, unsigned long d) {
 }
 
 void Track::track_debug() const {
-    serial_printf("track status=");
+    serial_printf("    \"trackstatus\":");
     if (status() == TS_OPEN) {
-        serial_printf("open\n");
+        serial_printf("\"open\"\n");
     } else if (status() == TS_FULL) {
-        serial_printf("full, ");
+        serial_printf("\"full\",");
     } else if (status() == TS_STP_RCVD_L) {
-        serial_printf("stop received (low), ");
+        serial_printf("\"stop received (low)\",");
     } else if (status() == TS_STP_RCVD_H) {
-        serial_printf("stop received (high), ");
+        serial_printf("\"stop received (high)\",");
     } else if (status() == TS_ERROR) {
-        serial_printf("error, ");
+        serial_printf("\"error\",");
     } else {
-        serial_printf("unknown, ");
+        serial_printf("\"unknown\",");
     }
     uint32_t xorval = rails[0].recorded ^ rails[1].recorded;
     if (status() != TS_OPEN) {
-        serial_printf("v(0) ^ v(1) = 0x%08lx\n", xorval);
+        serial_printf("\"xorval\":0x%08lx,\n", xorval);
         for (byte i = 0; i < 2; ++i) {
-            serial_printf("  rail %d, ", i);
+            serial_printf("    \"rail%d\":{\n", i);
             rails[i].rail_debug();
+            serial_printf("    }%s\n", i == 1 ? "" : ",");
         }
     }
-    serial_printf("\n");
 }
 
 byte Track::status() const {
@@ -555,6 +558,8 @@ unsigned int sim_timings[200];
 unsigned int sim_timings_count = 0;
 
 unsigned int sim_int_count = 0;
+unsigned int counter;
+
 #endif
 
 void handle_interrupt() {
@@ -618,8 +623,7 @@ void handle_interrupt() {
 
 void setup() {
     pinMode(PIN_RFINPUT, INPUT);
-//    Serial.begin(115200);
-    Serial.begin(57600);
+    Serial.begin(115200);
 
 //    sleep_enable();
 //    set_sleep_mode(SLEEP_MODE_IDLE);
@@ -630,10 +634,9 @@ void loop() {
 #ifdef SIMULATE
 
     if (sim_int_count >= sim_timings_count) {
-        serial_printf("Reading timings from USB...\n");
-        delay(100);
         sim_timings_count = 0;
         sim_int_count = 0;
+        counter = 0;
         buffer[0] = '\0';
         for (   ;
                 strcmp(buffer, ".");
@@ -677,8 +680,21 @@ void loop() {
         handle_interrupt();
     }
 
-    serial_printf("N=%d {%u..%u}\n",
-                  sim_timings_count, sim_int_count_svg, sim_int_count - 1);
+    if (!counter) {
+        delay(100);
+        serial_printf("----- BEGIN TEST -----\n");
+        serial_printf("[\n");
+    }
+
+    ++counter;
+
+    if (sim_int_count - sim_int_count_svg >= 6) {
+        serial_printf("%s  {\n", counter >= 2 ? ",\n" : "");
+        serial_printf("    \"N\":%d,\"start\":%u,\"end\":%u,\n",
+                      sim_timings_count, sim_int_count_svg, sim_int_count - 1);
+    } else {
+        serial_printf("\n]\n----- END TEST -----\n\n");
+    }
 
 #else
 
@@ -714,7 +730,10 @@ void loop() {
                       clow, chigh);
     }
 #endif
-    track.track_debug();
+    if (sim_int_count - sim_int_count_svg >= 6) {
+        track.track_debug();
+        serial_printf("  }");
+    }
 
 #ifndef SIMULATE
     serial_printf("-----END RF433 LOW HIGH SEQUENCE-----\n");
