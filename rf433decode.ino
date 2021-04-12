@@ -29,17 +29,18 @@
 // END SCHEMATIC CONSTANTS
 
 #include <Arduino.h>
+#include <avr/sleep.h>
 
 #define SIMULATE
 
 
-// * *********************************** *
-// * Manage printf-like output to Serial *
-// * *********************************** *
+// * *********************************** **************************************
+// * Manage printf-like output to Serial **************************************
+// * *********************************** **************************************
 
 #include <stdarg.h>
 
-char serial_printf_buffer[150];
+char serial_printf_buffer[80];
 void serial_printf(const char* msg, ...)
      __attribute__((format(printf, 1, 2)));
 
@@ -62,9 +63,9 @@ void serial_printf(const char* msg, ...) {
     }
 
 
-// * ********************** *
-// * Read input from serial *
-// * ********************** *
+// * ********************** ***************************************************
+// * Read input from serial ***************************************************
+// * ********************** ***************************************************
 
 #ifdef SIMULATE
 
@@ -79,7 +80,7 @@ void serial_printf(const char* msg, ...) {
 // behave this way).
 class SerialLine {
     private:
-        char buf[83]; // 80-character strings (then CR+LF then NULL-terminating)
+        char buf[23]; // 20-character strings (then CR+LF then NULL-terminating)
         size_t head;
         bool got_a_line;
         void reset();
@@ -175,9 +176,9 @@ void SerialLine::get_line_blocking(char *s, size_t len) {
 #endif // SIMULATE
 
 
-// * ******************** *
-// * Bands, Rails, Tracks *
-// * ******************** *
+// * ******************** *****************************************************
+// * Bands, Rails, Tracks *****************************************************
+// * ******************** *****************************************************
 
 /*
 
@@ -267,6 +268,11 @@ track ->  rails[0] ->  band[0] = manage short duration on LOW signal
 
 */
 
+
+// * **** *********************************************************************
+// * Band *********************************************************************
+// * **** *********************************************************************
+
 #define ST_WAIT_SIGNAL    0
 #define ST_RECORDING      1
 #define ST_DATA_AVAILABLE 2
@@ -298,6 +304,11 @@ inline bool Band::test_value(unsigned long d) {
     }
     return got_it;
 }
+
+
+// * **** *********************************************************************
+// * Rail *********************************************************************
+// * **** *********************************************************************
 
 #define RAIL_OPEN     0
 #define RAIL_FULL     1
@@ -428,6 +439,11 @@ byte Rail::get_nth_bit(byte n) const {
     return !!(recorded & (uint32_t)1 << n);
 }
 
+
+// * ***** ********************************************************************
+// * Track ********************************************************************
+// * ***** ********************************************************************
+
 #define TS_OPEN       0
 #define TS_FULL       1
 #define TS_STP_RCVD_L 2
@@ -533,20 +549,20 @@ byte Track::track_get_nth_bit(byte r, byte n) const {
 }
 
 
-// * ************* *
-// * Interruptions *
-// * ************* *
+// * ************* ************************************************************
+// * Interruptions ************************************************************
+// * ************* ************************************************************
 
 unsigned long start_time;
 unsigned long end_time;
 unsigned long signal_duration;
 
-unsigned long last_t = 0;
-short status = ST_WAIT_SIGNAL;
-unsigned int write_head_pos;
+volatile unsigned long last_t = 0;
+volatile short status = ST_WAIT_SIGNAL;
+volatile unsigned int write_head_pos;
 //unsigned int write_head_pos_when_consistency_got_lost;
-unsigned long timings_d0;
-uint32_t timings[80];
+volatile unsigned long timings_d0;
+volatile uint32_t timings[80];
 
 Track track;
 
@@ -554,7 +570,7 @@ Track track;
 SerialLine sl;
 char buffer[SerialLine::buf_len];
 
-unsigned int sim_timings[200];
+unsigned int sim_timings[110];
 unsigned int sim_timings_count = 0;
 
 unsigned int sim_int_count = 0;
@@ -621,12 +637,17 @@ void handle_interrupt() {
         ;
 }
 
+
+// * ********* ****************************************************************
+// * Execution ****************************************************************
+// * ********* ****************************************************************
+
 void setup() {
     pinMode(PIN_RFINPUT, INPUT);
     Serial.begin(115200);
 
-//    sleep_enable();
-//    set_sleep_mode(SLEEP_MODE_IDLE);
+    sleep_enable();
+    set_sleep_mode(SLEEP_MODE_IDLE);
 }
 
 void loop() {
@@ -701,8 +722,8 @@ void loop() {
     serial_printf("Waiting for signal\n");
 
     attachInterrupt(INT_RFINPUT, &handle_interrupt, CHANGE);
-    while (track.status() == TS_OPEN) {
-        delay(20);
+    while (status != ST_DATA_AVAILABLE) {
+        sleep_mode();
     }
     detachInterrupt(INT_RFINPUT);
 
@@ -730,12 +751,13 @@ void loop() {
                       clow, chigh);
     }
 #endif
+
+#ifdef SIMULATE
     if (sim_int_count - sim_int_count_svg >= 6) {
         track.track_debug();
         serial_printf("  }");
     }
-
-#ifndef SIMULATE
+#else
     serial_printf("-----END RF433 LOW HIGH SEQUENCE-----\n");
     status = ST_WAIT_SIGNAL;
 #endif

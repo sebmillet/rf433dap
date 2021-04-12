@@ -20,3 +20,13 @@ The test consists in launching the script
 
 This script must be updated depending on the port the board is connected to.
 
+The typical sequence of instructions to do the test is:
+
+1. The working directory being main rf433dap folder, execute:
+
+```shell
+./am rf433decode.ino -u --stty
+cd test_linux
+./tt.sh
+```
+
