@@ -31,7 +31,8 @@
 #include <Arduino.h>
 #include <avr/sleep.h>
 
-#define SIMULATE
+//#define SIMULATE
+//#define TRACE
 
 
 // * *********************************** **************************************
@@ -273,9 +274,12 @@ track ->  rails[0] ->  band[0] = manage short duration on LOW signal
 // * Band *********************************************************************
 // * **** *********************************************************************
 
-#define ST_WAIT_SIGNAL    0
-#define ST_RECORDING      1
-#define ST_DATA_AVAILABLE 2
+//#define ST_WAIT_SIGNAL    0
+//#define ST_RECORDING      1
+//#define ST_DATA_AVAILABLE 2
+
+#define BAND_MIN_D    64
+#define BAND_MAX_D 10000
 
 struct Band {
     unsigned long inf;
@@ -289,19 +293,31 @@ struct Band {
 };
 
 inline void Band::init(unsigned long d) {
-    mid = d;
-    inf = d - (d >> 2);
-    sup = d + (d >> 2);
-    got_it = false;
+    if (d >= BAND_MIN_D && d <= BAND_MAX_D) {
+        mid = d;
+        unsigned long d_divided_by_4 = d >> 2;
+        inf = d - d_divided_by_4;
+        sup = d + d_divided_by_4;
+        got_it = true;
+    } else
+        got_it = false;
 }
 
 inline bool Band::test_value(unsigned long d) {
     if (!mid) {
         init(d);
-        got_it = true;
+#ifdef TRACE
+        serial_printf("B> initialized band with %lu\n", d);
+#endif
     } else {
         got_it = (d >= inf && d <= sup);
+#ifdef TRACE
+        serial_printf("B> compared d (%lu) with [%lu, %lu]\n", d, inf, sup);
+#endif
     }
+#ifdef TRACE
+    serial_printf("B> result = %d\n", got_it);
+#endif
     return got_it;
 }
 
@@ -326,10 +342,11 @@ class Rail {
 
     public:
         Rail();
-        bool eat(unsigned long d);
+        bool rail_eat(unsigned long d);
         void reset();
         void rail_debug() const;
         byte get_nth_bit(byte n) const;
+        byte get_band_count() const;
 };
 
 Rail::Rail() {
@@ -346,7 +363,13 @@ inline void Rail::reset() {
     recorded = 0;
 }
 
-bool Rail::eat(unsigned long d) {
+bool Rail::rail_eat(unsigned long d) {
+
+#ifdef TRACE
+        // FIXME
+    serial_printf("R> index = %d, d = %lu\n", index, d);
+#endif
+
     if (status != RAIL_OPEN)
         return false;
 
@@ -356,35 +379,71 @@ bool Rail::eat(unsigned long d) {
     if (band[1].test_value(d))
         ++count_got_it;
 
-    byte band_count = (band[0].mid == band[1].mid ? 1 : 2);
+    byte band_count = get_band_count();
+
+#ifdef TRACE
+        // FIXME
+    serial_printf("R> band[0].got_it = %d, band[1].got_it = %d, "
+                  "band_count = %d\n", band[0].got_it, band[1].got_it,
+                  band_count);
+    for (int i = 0; i < 2; ++i) {
+        serial_printf("R>  [%i]: inf = %lu, mid = %lu, sup = %lu\n", i,
+                band[i].inf, band[i].mid, band[i].sup);
+    }
+#endif
 
     if (band_count == 1 && !count_got_it) {
         byte new_band;
+        unsigned long small;
+        unsigned long big;
         if (d < band[0].inf) {
             new_band = 0;
+            small = d;
+            big = band[0].mid;
         } else if (d > band[0].sup) {
             new_band = 1;
+            small = band[0].mid;
+            big = d;
         } else {
                 // Should not happen.
                 // If value is within band range, then why the hell didn't the
                 // range grab it?
-            FATAL
+            FATAL;
         }
-        band[new_band].init(d);
-        band[new_band].got_it = true;
-        ++count_got_it;
-        band_count = 2;
 
-            // FIXME
-            //   Test if intervals overlap?
-            //   (that is, test if band[0].sup >= band[1].inf)
-        ;
+#ifdef TRACE
+        serial_printf("R> P0\n");
+#endif
 
-        if (new_band == 0) {
-                // The first N signals received ('N' equals 'index') happened to
-                // be LONG ones => to be recorded as as many ONEs.
-            recorded = ((uint32_t)1 << index) - 1;
+        if ((small << 2) >= big) {
+            band[new_band].init(d);
+            if (band[new_band].got_it) {
+
+#ifdef TRACE
+                serial_printf("R> P1\n");
+#endif
+
+                count_got_it = 1;
+                band_count = 2;
+
+                    // FIXME
+                    //   Test if intervals overlap?
+                    //   That is, test if band[0].sup >= band[1].inf?
+                ;
+
+                if (new_band == 0) {
+                        // The first N signals received ('N' equals 'index')
+                        // happened to be LONG ones => to be recorded as as many
+                        // ONEs.
+                    recorded = ((uint32_t)1 << index) - 1;
+                }
+            }
         }
+    }
+
+    if (!band_count) {
+        status = RAIL_ERROR;
+        return false;
     }
 
     if (!count_got_it || (band_count == 2 && count_got_it == 2)) {
@@ -399,7 +458,7 @@ bool Rail::eat(unsigned long d) {
         }
         recorded = (recorded << 1) | (band[0].got_it ? 0 : 1);
     }
-    if (++index == 32) {
+    if (++index == (8 * sizeof(recorded))) {
         status = RAIL_FULL;
     }
 
@@ -439,46 +498,86 @@ byte Rail::get_nth_bit(byte n) const {
     return !!(recorded & (uint32_t)1 << n);
 }
 
+byte Rail::get_band_count() const {
+    return band[0].mid == band[1].mid ? (band[0].mid ? 1 : 0) : 2;
+}
+
 
 // * ***** ********************************************************************
 // * Track ********************************************************************
 // * ***** ********************************************************************
 
-#define TS_OPEN       0
-#define TS_FULL       1
-#define TS_STP_RCVD_L 2
-#define TS_STP_RCVD_H 3
-#define TS_ERROR      4
+#define TRACK_MIN_INITSEQ_DURATION 4000
+#define TRACK_MIN_BITS             4
+
+typedef enum {TRK_WAIT, TRK_RECV, TRK_DATA} trk_t;
 class Track {
     private:
+        volatile trk_t trk;
         Rail rails[2];
 
     public:
         Track();
 
-        void reset();
+        void treset();
         void track_eat(byte n, unsigned long d);
         void track_debug() const;
         byte get_nb_bits() const;
         byte track_get_nth_bit(byte r, byte n) const;
-        byte status() const;
+
+        trk_t get_trk() const { return trk; }
+        bool rails_have_2_bands() const;
 };
 
 Track::Track() {
-    reset();
+    treset();
 }
 
-void Track::reset() {
-    rails[0].reset();
-    rails[1].reset();
+void Track::treset() {
+    trk = TRK_WAIT;
 }
 
 void Track::track_eat(byte r, unsigned long d) {
+
+#ifdef TRACE
+        // FIXME
+    serial_printf("T> trk = %d, r = %d, d = %lu\n", trk, r, d);
+#endif
+
+    if (trk == TRK_WAIT) {
+        if (r == 1 && d >= TRACK_MIN_INITSEQ_DURATION) {
+            rails[0].reset();
+            rails[1].reset();
+            trk = TRK_RECV;
+        }
+        return;
+    } else if (trk != TRK_RECV) {
+        return;
+    }
+
     if (rails[r].status != RAIL_OPEN)
         return;
 
-    if (!rails[r].eat(d) || (r == 1 && rails[0].status != RAIL_OPEN)) {
-        if (r == 1) {
+    bool b = rails[r].rail_eat(d);
+    if (!b || (r == 1 && rails[0].status != RAIL_OPEN)) {
+
+#ifdef TRACE
+        serial_printf("T> b = %d\n", b);
+#endif
+
+        if (rails[0].index < TRACK_MIN_BITS) {
+
+#ifdef TRACE
+            serial_printf("T> P0\n");
+#endif
+
+            treset();
+            // WARNING
+            // Re-entrant call... not ideal, but, avoids to re-write what is to
+            // be done if the condition of a new signal is met <=>
+            //   (r == 1 && d >= TRACK_MIN_INITSEQ_DURATION)
+            track_eat(r, d);
+        } else if (r == 1) {
             int dec = -1;
             if (rails[0].index >= 1 && rails[1].index >= 1) {
                 if (rails[0].index > rails[1].index) {
@@ -494,31 +593,30 @@ void Track::track_eat(byte r, unsigned long d) {
             if (rails[1].index != rails[0].index) {
                 FATAL;
             }
+
             if (rails[0].status == RAIL_OPEN)
                 rails[0].status = RAIL_CLOSED;
             if (rails[1].status == RAIL_OPEN)
                 rails[1].status = RAIL_CLOSED;
+
+            trk = TRK_DATA;
         }
     }
 }
 
 void Track::track_debug() const {
-    serial_printf("    \"trackstatus\":");
-    if (status() == TS_OPEN) {
-        serial_printf("\"open\"\n");
-    } else if (status() == TS_FULL) {
-        serial_printf("\"full\",");
-    } else if (status() == TS_STP_RCVD_L) {
-        serial_printf("\"stop received (low)\",");
-    } else if (status() == TS_STP_RCVD_H) {
-        serial_printf("\"stop received (high)\",");
-    } else if (status() == TS_ERROR) {
-        serial_printf("\"error\",");
+    serial_printf("    \"trk\":");
+    if (trk == TRK_WAIT) {
+        serial_printf("\"TRK_WAIT\"\n");
+    } else if (trk == TRK_RECV) {
+        serial_printf("\"TRK_RECV\",");
+    } else if (trk == TRK_DATA) {
+        serial_printf("\"TRK_DATA\",");
     } else {
-        serial_printf("\"unknown\",");
+        serial_printf("\"(UNKNOWN)\",");
     }
     uint32_t xorval = rails[0].recorded ^ rails[1].recorded;
-    if (status() != TS_OPEN) {
+    if (trk != TRK_WAIT) {
         serial_printf("\"xorval\":0x%08lx,\n", xorval);
         for (byte i = 0; i < 2; ++i) {
             serial_printf("    \"rail%d\":{\n", i);
@@ -528,19 +626,9 @@ void Track::track_debug() const {
     }
 }
 
-byte Track::status() const {
-    if (rails[0].status == RAIL_OPEN || rails[1].status == RAIL_OPEN)
-        return TS_OPEN;
-    if (rails[0].status == RAIL_FULL && rails[1].status == RAIL_FULL)
-        return TS_FULL;
-    if (rails[0].status == RAIL_STP_RCVD)
-        return TS_STP_RCVD_L;
-    if (rails[1].status == RAIL_STP_RCVD)
-        return TS_STP_RCVD_H;
-    return TS_ERROR;
-}
-
 byte Track::get_nb_bits() const {
+    if (trk == TRK_WAIT)
+        return 0;
     return rails[0].index < rails[1].index ? rails[0].index : rails[1].index;
 }
 
@@ -548,21 +636,22 @@ byte Track::track_get_nth_bit(byte r, byte n) const {
     return rails[r].get_nth_bit(n);
 }
 
+    // Returns true if both rails have 2 bands, meaning, the signal received
+    // showed both short and long signal durations.
+    // If one rail has one band, that means we don't know if signal on this band
+    // is 'short' or 'long' (= the duration was constant).
+    // This can be important to know, because if the function returns false, the
+    // caller should NOT consider the signal received contains information (this
+    // most likely corresponds to a sync prefix before real information
+    // encoding).
+bool Track::rails_have_2_bands() const {
+    return false;
+}
+
 
 // * ************* ************************************************************
 // * Interruptions ************************************************************
 // * ************* ************************************************************
-
-unsigned long start_time;
-unsigned long end_time;
-unsigned long signal_duration;
-
-volatile unsigned long last_t = 0;
-volatile short status = ST_WAIT_SIGNAL;
-volatile unsigned int write_head_pos;
-//unsigned int write_head_pos_when_consistency_got_lost;
-volatile unsigned long timings_d0;
-volatile uint32_t timings[80];
 
 Track track;
 
@@ -570,7 +659,7 @@ Track track;
 SerialLine sl;
 char buffer[SerialLine::buf_len];
 
-unsigned int sim_timings[110];
+unsigned int sim_timings[130];
 unsigned int sim_timings_count = 0;
 
 unsigned int sim_int_count = 0;
@@ -579,6 +668,7 @@ unsigned int counter;
 #endif
 
 void handle_interrupt() {
+    static unsigned long last_t = 0;
     const unsigned long t = micros();
 
     if (!last_t) {
@@ -589,8 +679,10 @@ void handle_interrupt() {
 #ifndef SIMULATE
     const unsigned long d = t - last_t;
     last_t = t;
+    byte r = (digitalRead(PIN_RFINPUT) == HIGH ? 1 : 0);
 #else
     unsigned long d;
+    byte r = sim_int_count % 2;
     if (sim_int_count >= sim_timings_count) {
         d = 100;
     } else {
@@ -598,49 +690,52 @@ void handle_interrupt() {
     }
 #endif
 
-    if (status == ST_WAIT_SIGNAL) {
-#ifdef SIMULATE
-        if (d >= 4000 && !(sim_int_count % 2)) {
-#else
-        if (d >= 4000 && digitalRead(PIN_RFINPUT) == HIGH) {
-#endif
-            timings_d0 = d;
-            write_head_pos = 0;
-            start_time = micros();
-            track.reset();
-            status = ST_RECORDING;
-        }
+    track.track_eat(r, d);
 
-        return;
-    }
-
-    if (status == ST_RECORDING) {
-        if (write_head_pos >= 20 || (d >= 60 && d < 10000)) {
-            track.track_eat(write_head_pos % 2, d);
-            timings[write_head_pos++] = d;
-            if (write_head_pos >= sizeof(timings) / sizeof(*timings)) {
-                end_time = micros();
-                status = ST_DATA_AVAILABLE;
-            }
-        } else {
-            status = ST_WAIT_SIGNAL;
-        }
-
-        return;
-    }
-
-    if (status == ST_DATA_AVAILABLE) {
-        return;
-    }
-
-    while (1)
-        ;
 }
 
 
 // * ********* ****************************************************************
 // * Execution ****************************************************************
 // * ********* ****************************************************************
+
+#ifdef SIMULATE
+void read_simulated_timings_from_usb() {
+    sim_timings_count = 0;
+    sim_int_count = 0;
+    counter = 0;
+    buffer[0] = '\0';
+    for (   ;
+            strcmp(buffer, ".");
+            sl.get_line_blocking(buffer, sizeof(buffer))
+        ) {
+
+        if (!strlen(buffer))
+            continue;
+
+        char *p = buffer;
+        while (*p != ',' && *p != '\0')
+            ++p;
+        if (*p != ',') {
+            serial_printf("FATAL: each line must have a ',' character!\n");
+            FATAL;
+        }
+
+        *p = '\0';
+        unsigned int l = atoi(buffer);
+        unsigned int h = atoi(p + 1);
+
+        if (sim_timings_count >=
+                sizeof(sim_timings) / sizeof(*sim_timings) - 1) {
+            serial_printf("FATAL: timings buffer full!\n");
+            FATAL;
+        }
+
+        sim_timings[sim_timings_count++] = l;
+        sim_timings[sim_timings_count++] = h;
+    }
+}
+#endif
 
 void setup() {
     pinMode(PIN_RFINPUT, INPUT);
@@ -654,50 +749,12 @@ void loop() {
 
 #ifdef SIMULATE
 
-    if (sim_int_count >= sim_timings_count) {
-        sim_timings_count = 0;
-        sim_int_count = 0;
-        counter = 0;
-        buffer[0] = '\0';
-        for (   ;
-                strcmp(buffer, ".");
-                sl.get_line_blocking(buffer, sizeof(buffer))
-            ) {
+    if (sim_int_count >= sim_timings_count)
+        read_simulated_timings_from_usb();
 
-            if (!strlen(buffer))
-                continue;
-
-            char *p = buffer;
-            while (*p != ',' && *p != '\0')
-                ++p;
-            if (*p != ',') {
-                serial_printf("FATAL: each line must have a ',' character!\n");
-                FATAL;
-            }
-
-            *p = '\0';
-            unsigned int l = atoi(buffer);
-            unsigned int h = atoi(p + 1);
-
-            if (sim_timings_count >=
-                    sizeof(sim_timings) / sizeof(*sim_timings) - 1) {
-                serial_printf("FATAL: timings buffer full!\n");
-                FATAL;
-            }
-
-            sim_timings[sim_timings_count++] = l;
-            sim_timings[sim_timings_count++] = h;
-        }
-    }
-
-    track.reset();
-    write_head_pos = 0;
-    for (byte i = 0; i < sizeof(timings) / sizeof(*timings); ++i) {
-        timings[i] = 0;
-    }
+    track.treset();
     unsigned int sim_int_count_svg = sim_int_count;
-    while (track.status() == TS_OPEN
-           && sim_int_count < sim_timings_count) {
+    while (track.get_trk() != TRK_DATA && sim_int_count < sim_timings_count) {
         handle_interrupt();
     }
 
@@ -709,58 +766,32 @@ void loop() {
 
     ++counter;
 
-    if (sim_int_count - sim_int_count_svg >= 6) {
+    if (track.get_trk() == TRK_DATA) {
         serial_printf("%s  {\n", counter >= 2 ? ",\n" : "");
         serial_printf("    \"N\":%d,\"start\":%u,\"end\":%u,\n",
                       sim_timings_count, sim_int_count_svg, sim_int_count - 1);
+        track.track_debug();
     } else {
         serial_printf("\n]\n----- END TEST -----\n\n");
     }
 
+    serial_printf("  }");
+
 #else
 
     serial_printf("Waiting for signal\n");
+    track.treset();
 
     attachInterrupt(INT_RFINPUT, &handle_interrupt, CHANGE);
-    while (status != ST_DATA_AVAILABLE) {
+    while (track.get_trk() != TRK_DATA) {
         sleep_mode();
     }
     detachInterrupt(INT_RFINPUT);
 
-    signal_duration = end_time - start_time;
+    track.track_debug();
 
-    serial_printf("duration: %lu us\n", signal_duration);
-    serial_printf("  N  %6s,%6s\n", "LOW", "HIGH");
-    serial_printf("-----BEGIN RF433 LOW HIGH SEQUENCE-----\n");
-    serial_printf("     %6s,%6lu\n", "", timings_d0);
-
-    byte nb_bits = track.get_nb_bits();
-    for(int i = 0; i + 1 < (nb_bits << 1) + 2; i += 2) {
-        byte s = (i >> 1);
-        char clow, chigh;
-        if (s >= nb_bits) {
-            clow = '-';
-            chigh = '-';
-        } else {
-            clow = track.track_get_nth_bit(0, nb_bits - s - 1) ? 'l' :'s';
-            chigh = track.track_get_nth_bit(1, nb_bits - s - 1) ? 'l' : 's';
-        }
-        serial_printf("%03i  %6lu,%6lu  %c, %c\n", s,
-                      (unsigned long)timings[i],
-                      (unsigned long)timings[i + 1],
-                      clow, chigh);
-    }
 #endif
 
-#ifdef SIMULATE
-    if (sim_int_count - sim_int_count_svg >= 6) {
-        track.track_debug();
-        serial_printf("  }");
-    }
-#else
-    serial_printf("-----END RF433 LOW HIGH SEQUENCE-----\n");
-    status = ST_WAIT_SIGNAL;
-#endif
 }
 
 // vim: ts=4:sw=4:tw=80:et

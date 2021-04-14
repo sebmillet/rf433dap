@@ -1,7 +1,7 @@
 [
   {
     "N":68,"start":0,"end":65,
-    "trackstatus":"full","xorval":0xffffffff,
+    "trk":"TRK_DATA","xorval":0xffffffff,
     "rail0":{
       "bits":32,"v":0xb6956d00,"railstatus":"full","n":2,
       "band0":{"inf":402,"mid":536,"sup":670},
