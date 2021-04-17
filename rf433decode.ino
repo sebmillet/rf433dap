@@ -33,6 +33,7 @@
 
 //#define SIMULATE
 //#define TRACE
+#define REC_TIMINGS
 
 
 // * *********************************** **************************************
@@ -508,13 +509,19 @@ byte Rail::get_band_count() const {
 // * ***** ********************************************************************
 
 #define TRACK_MIN_INITSEQ_DURATION 4000
-#define TRACK_MIN_BITS             4
+#define TRACK_MIN_BITS             8
 
 typedef enum {TRK_WAIT, TRK_RECV, TRK_DATA} trk_t;
 class Track {
     private:
         volatile trk_t trk;
         Rail rails[2];
+
+#ifdef REC_TIMINGS
+        unsigned int timings[80];
+        unsigned int exec_d[80];
+        int timing_pos;
+#endif
 
     public:
         Track();
@@ -527,6 +534,10 @@ class Track {
 
         trk_t get_trk() const { return trk; }
         bool rails_have_2_bands() const;
+
+#ifdef REC_TIMINGS
+        void record_exec_d(unsigned long d);
+#endif
 };
 
 Track::Track() {
@@ -535,6 +546,9 @@ Track::Track() {
 
 void Track::treset() {
     trk = TRK_WAIT;
+#ifdef REC_TIMINGS
+    timing_pos = 0;
+#endif
 }
 
 void Track::track_eat(byte r, unsigned long d) {
@@ -549,6 +563,9 @@ void Track::track_eat(byte r, unsigned long d) {
             rails[0].reset();
             rails[1].reset();
             trk = TRK_RECV;
+#ifdef REC_TIMINGS
+            timings[timing_pos++] = d;
+#endif
         }
         return;
     } else if (trk != TRK_RECV) {
@@ -557,6 +574,10 @@ void Track::track_eat(byte r, unsigned long d) {
 
     if (rails[r].status != RAIL_OPEN)
         return;
+
+#ifdef REC_TIMINGS
+    timings[timing_pos++] = d;
+#endif
 
     bool b = rails[r].rail_eat(d);
     if (!b || (r == 1 && rails[0].status != RAIL_OPEN)) {
@@ -604,6 +625,13 @@ void Track::track_eat(byte r, unsigned long d) {
     }
 }
 
+#ifdef REC_TIMINGS
+void Track::record_exec_d(unsigned long d) {
+    if (trk == TRK_RECV && timing_pos >= 1)
+        exec_d[timing_pos - 1] = d;
+}
+#endif
+
 void Track::track_debug() const {
     serial_printf("    \"trk\":");
     if (trk == TRK_WAIT) {
@@ -624,6 +652,14 @@ void Track::track_debug() const {
             serial_printf("    }%s\n", i == 1 ? "" : ",");
         }
     }
+
+#ifdef REC_TIMINGS
+    serial_printf("%4s, %4d\n", "", timings[0]);
+    for (int i = 1; i < timing_pos - 1; i += 2) {
+        serial_printf("%4d, %4d  |  %5d, %5d\n", timings[i], timings[i + 1],
+                      exec_d[i], exec_d[i + 1]);
+    }
+#endif
 }
 
 byte Track::get_nb_bits() const {
@@ -667,12 +703,21 @@ unsigned int counter;
 
 #endif
 
+bool handle_interrupt_in_progress = false;
 void handle_interrupt() {
     static unsigned long last_t = 0;
+
+    if (handle_interrupt_in_progress)
+        return;
+    handle_interrupt_in_progress = true;
+
+    sei();
+
     const unsigned long t = micros();
 
     if (!last_t) {
         last_t = t;
+        handle_interrupt_in_progress = false;
         return;
     }
 
@@ -692,6 +737,13 @@ void handle_interrupt() {
 
     track.track_eat(r, d);
 
+#ifdef REC_TIMINGS
+    unsigned long t1 = micros();
+    track.record_exec_d(t1 - t);
+#endif
+
+    handle_interrupt_in_progress = false;
+    return;
 }
 
 
