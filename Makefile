@@ -1,5 +1,5 @@
 ARDUINO_DIR = /home/sebastien/travail/arduino-1.8.9
-ARDUINO_LIBS =
+ARDUINO_LIBS = debug
 ARDMK_DIR = /home/sebastien/.arduino_mk
 
 USER_LIB_PATH = /home/sebastien/travail/cpp/seb/arduino/libraries
