@@ -275,23 +275,27 @@ track ->  r_low  ->  b_short = manage short duration on LOW signal
 // * **** *********************************************************************
 
 #define BAND_MIN_D    64
+    // IMPORTANT
+    //   See comment below about BAND_MAX_D => value must be so that
+    //   BAND_MAX_D * 2 can be stored in a uint16_t.
+    //   That means BAND_MAX_D must be lower than 32768.
 #define BAND_MAX_D 20000
 
 struct Band {
-    unsigned int inf;
-    unsigned int mid;
-    unsigned int sup;
+    uint16_t inf;
+    uint16_t mid;
+    uint16_t sup;
 
     bool got_it;
-    bool test_value(unsigned int d);
+    bool test_value(uint16_t d);
 
-    void init(unsigned int d);
+    void init(uint16_t d);
 };
 
-inline void Band::init(unsigned int d) {
+inline void Band::init(uint16_t d) {
     if (d >= BAND_MIN_D && d <= BAND_MAX_D) {
         mid = d;
-        unsigned int d_divided_by_4 = d >> 2;
+        uint16_t d_divided_by_4 = d >> 2;
         inf = d - d_divided_by_4;
         sup = d + d_divided_by_4;
         got_it = true;
@@ -299,7 +303,7 @@ inline void Band::init(unsigned int d) {
         got_it = false;
 }
 
-inline bool Band::test_value(unsigned int d) {
+inline bool Band::test_value(uint16_t d) {
     if (!mid) {
         init(d);
 #ifdef TRACE
@@ -339,7 +343,7 @@ class Rail {
 
     public:
         Rail();
-        bool rail_eat(unsigned int d);
+        bool rail_eat(uint16_t d);
         void reset();
         void rail_debug() const;
 //        byte get_nth_bit(byte n) const;
@@ -360,7 +364,7 @@ inline void Rail::reset() {
     recorded = 0;
 }
 
-inline bool Rail::rail_eat(unsigned int d) {
+inline bool Rail::rail_eat(uint16_t d) {
 
 #ifdef TRACE
         // FIXME
@@ -393,8 +397,17 @@ inline bool Rail::rail_eat(unsigned int d) {
 
     if (band_count == 1 && !count_got_it) {
         Band *pband;
-        unsigned int small;
-        unsigned int big;
+            // IMPORTANT
+            //   We are using below 'unsigned long' although they are
+            //   initialized using uint16_t values.
+            //   We need 'unsigned long' because later in the code, we check
+            //   whether 'big' is not more than 4 times 'short' (if it is, then
+            //   the coding shape is too distorted and we give up).
+            //   We do this check by calculating 'small << 2', therefore it
+            //   could be that this operation ends up above 16-bit max unsigned
+            //   integer value.
+        unsigned long small;
+        unsigned long big;
         if (d < b_short.inf) {
             pband = &b_short;
             small = d;
@@ -446,6 +459,8 @@ inline bool Rail::rail_eat(unsigned int d) {
     }
 
     if (!count_got_it || (band_count == 2 && count_got_it == 2)) {
+            // BAND_MAX_D is 20000, and multiplying .mid by 2 as it'll produce a
+            // maximum value of 40000, that's OK for an unsigned 16-bit integer.
         status = (d >= (b_short.mid << 1) && d >= (b_long.mid << 1))
                  ? RAIL_STP_RCVD : RAIL_ERROR;
         return false;
@@ -519,8 +534,8 @@ class Track {
         Rail r_high;
 
 #ifdef REC_TIMINGS
-        unsigned int timings[80];
-        unsigned int exec_d[80];
+        uint16_t timings[80];
+        uint16_t exec_d[80];
         int timing_pos;
 #endif
 
@@ -528,7 +543,7 @@ class Track {
         Track();
 
         void treset();
-        void track_eat(byte n, unsigned int d);
+        void track_eat(byte n, uint16_t d);
         void track_debug() const;
         byte get_nb_bits() const;
 
@@ -536,7 +551,7 @@ class Track {
         bool rails_have_2_bands() const;
 
 #ifdef REC_TIMINGS
-        void record_exec_d(unsigned int d);
+        void record_exec_d(uint16_t d);
 #endif
 };
 
@@ -551,7 +566,7 @@ inline void Track::treset() {
 #endif
 }
 
-inline void Track::track_eat(byte r, unsigned int d) {
+inline void Track::track_eat(byte r, uint16_t d) {
 
 #ifdef TRACE
         // FIXME
@@ -627,7 +642,7 @@ inline void Track::track_eat(byte r, unsigned int d) {
 }
 
 #ifdef REC_TIMINGS
-void Track::record_exec_d(unsigned int d) {
+void Track::record_exec_d(uint16_t d) {
     if (trk == TRK_RECV && timing_pos >= 1)
         exec_d[timing_pos - 1] = d;
 }
@@ -692,23 +707,21 @@ Track track;
 SerialLine sl;
 char buffer[SerialLine::buf_len];
 
-unsigned int sim_timings[130];
-unsigned int sim_timings_count = 0;
+uint16_t sim_timings[130];
+uint16_t sim_timings_count = 0;
 
 unsigned int sim_int_count = 0;
 unsigned int counter;
-
 #endif
 
 bool handle_interrupt_in_progress = false;
 void handle_interrupt() {
-    static unsigned long last_t = 0;
-
     if (handle_interrupt_in_progress)
         return;
     handle_interrupt_in_progress = true;
-
     sei();
+
+    static unsigned long last_t = 0;
 
     const unsigned long t = micros();
 
