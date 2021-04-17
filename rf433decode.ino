@@ -31,9 +31,11 @@
 #include <Arduino.h>
 #include <avr/sleep.h>
 
-#define SIMULATE
+//#define SIMULATE
 //#define TRACE
-//#define REC_TIMINGS
+#define REC_TIMINGS
+
+#define MAX_DURATION 65535
 
 
 // * *********************************** **************************************
@@ -272,28 +274,24 @@ track ->  r_low  ->  b_short = manage short duration on LOW signal
 // * Band *********************************************************************
 // * **** *********************************************************************
 
-//#define ST_WAIT_SIGNAL    0
-//#define ST_RECORDING      1
-//#define ST_DATA_AVAILABLE 2
-
 #define BAND_MIN_D    64
-#define BAND_MAX_D 10000
+#define BAND_MAX_D 20000
 
 struct Band {
-    unsigned long inf;
-    unsigned long mid;
-    unsigned long sup;
+    unsigned int inf;
+    unsigned int mid;
+    unsigned int sup;
 
     bool got_it;
-    bool test_value(unsigned long d);
+    bool test_value(unsigned int d);
 
-    void init(unsigned long d);
+    void init(unsigned int d);
 };
 
-inline void Band::init(unsigned long d) {
+inline void Band::init(unsigned int d) {
     if (d >= BAND_MIN_D && d <= BAND_MAX_D) {
         mid = d;
-        unsigned long d_divided_by_4 = d >> 2;
+        unsigned int d_divided_by_4 = d >> 2;
         inf = d - d_divided_by_4;
         sup = d + d_divided_by_4;
         got_it = true;
@@ -301,16 +299,16 @@ inline void Band::init(unsigned long d) {
         got_it = false;
 }
 
-inline bool Band::test_value(unsigned long d) {
+inline bool Band::test_value(unsigned int d) {
     if (!mid) {
         init(d);
 #ifdef TRACE
-        serial_printf("B> initialized band with %lu\n", d);
+        serial_printf("B> initialized band with %u\n", d);
 #endif
     } else {
         got_it = (d >= inf && d <= sup);
 #ifdef TRACE
-        serial_printf("B> compared d (%lu) with [%lu, %lu]\n", d, inf, sup);
+        serial_printf("B> compared d (%u) with [%u, %u]\n", d, inf, sup);
 #endif
     }
 #ifdef TRACE
@@ -341,7 +339,7 @@ class Rail {
 
     public:
         Rail();
-        bool rail_eat(unsigned long d);
+        bool rail_eat(unsigned int d);
         void reset();
         void rail_debug() const;
 //        byte get_nth_bit(byte n) const;
@@ -362,11 +360,11 @@ inline void Rail::reset() {
     recorded = 0;
 }
 
-bool Rail::rail_eat(unsigned long d) {
+inline bool Rail::rail_eat(unsigned int d) {
 
 #ifdef TRACE
         // FIXME
-    serial_printf("R> index = %d, d = %lu\n", index, d);
+    serial_printf("R> index = %d, d = %u\n", index, d);
 #endif
 
     if (status != RAIL_OPEN)
@@ -386,15 +384,17 @@ bool Rail::rail_eat(unsigned long d) {
                   "band_count = %d\n", b_short.got_it, b_long.got_it,
                   band_count);
     for (int i = 0; i < 2; ++i) {
-        serial_printf("R>  [%i]: inf = %lu, mid = %lu, sup = %lu\n", i,
-                band[i].inf, band[i].mid, band[i].sup);
+        serial_printf("R>  [%i]: inf = %u, mid = %u, sup = %u\n", i,
+                      (i == 0 ? b_short.inf : b_long.inf),
+                      (i == 0 ? b_short.mid : b_long.mid),
+                      (i == 0 ? b_short.sup : b_long.sup));
     }
 #endif
 
     if (band_count == 1 && !count_got_it) {
         Band *pband;
-        unsigned long small;
-        unsigned long big;
+        unsigned int small;
+        unsigned int big;
         if (d < b_short.inf) {
             pband = &b_short;
             small = d;
@@ -457,7 +457,7 @@ bool Rail::rail_eat(unsigned long d) {
         }
         recorded = (recorded << 1) | (b_short.got_it ? 0 : 1);
     }
-    if (++index == (8 * sizeof(recorded))) {
+    if (++index == 32) {
         status = RAIL_FULL;
     }
 
@@ -483,7 +483,7 @@ void Rail::rail_debug() const {
     serial_printf("\"n\":%d,\n", b_short.mid == b_long.mid ? 1 : 2);
     for (byte i = 0; i < 2; ++i) {
         serial_printf("      \"%s\":{", (i == 0 ? "b_short" : "b_long"));
-        serial_printf("\"inf\":%lu,\"mid\":%lu,\"sup\":%lu",
+        serial_printf("\"inf\":%u,\"mid\":%u,\"sup\":%u",
                       (i == 0 ? b_short.inf : b_long.inf),
                       (i == 0 ? b_short.mid : b_long.mid),
                       (i == 0 ? b_short.sup : b_long.sup));
@@ -528,7 +528,7 @@ class Track {
         Track();
 
         void treset();
-        void track_eat(byte n, unsigned long d);
+        void track_eat(byte n, unsigned int d);
         void track_debug() const;
         byte get_nb_bits() const;
 
@@ -536,7 +536,7 @@ class Track {
         bool rails_have_2_bands() const;
 
 #ifdef REC_TIMINGS
-        void record_exec_d(unsigned long d);
+        void record_exec_d(unsigned int d);
 #endif
 };
 
@@ -544,18 +544,18 @@ Track::Track() {
     treset();
 }
 
-void Track::treset() {
+inline void Track::treset() {
     trk = TRK_WAIT;
 #ifdef REC_TIMINGS
     timing_pos = 0;
 #endif
 }
 
-void Track::track_eat(byte r, unsigned long d) {
+inline void Track::track_eat(byte r, unsigned int d) {
 
 #ifdef TRACE
         // FIXME
-    serial_printf("T> trk = %d, r = %d, d = %lu\n", trk, r, d);
+    serial_printf("T> trk = %d, r = %d, d = %u\n", trk, r, d);
 #endif
 
     if (trk == TRK_WAIT) {
@@ -587,7 +587,7 @@ void Track::track_eat(byte r, unsigned long d) {
         serial_printf("T> b = %d\n", b);
 #endif
 
-        if (r_low.index < TRACK_MIN_BITS) {
+        if (r_low.index < TRACK_MIN_BITS || r_high.index < TRACK_MIN_BITS) {
 
 #ifdef TRACE
             serial_printf("T> P0\n");
@@ -627,7 +627,7 @@ void Track::track_eat(byte r, unsigned long d) {
 }
 
 #ifdef REC_TIMINGS
-void Track::record_exec_d(unsigned long d) {
+void Track::record_exec_d(unsigned int d) {
     if (trk == TRK_RECV && timing_pos >= 1)
         exec_d[timing_pos - 1] = d;
 }
@@ -719,9 +719,11 @@ void handle_interrupt() {
     }
 
 #ifndef SIMULATE
-    const unsigned long d = t - last_t;
+    unsigned long d = t - last_t;
     last_t = t;
     byte r = (digitalRead(PIN_RFINPUT) == HIGH ? 1 : 0);
+    if (d > MAX_DURATION)
+        d = MAX_DURATION;
 #else
     unsigned long d;
     byte r = sim_int_count % 2;
