@@ -244,9 +244,6 @@ high):
 Then the values below LOW (150, 145, 290, ...) are one Rail, and the values
 below HIGH (200, 400, 195, ...) are another Rail.
 
-In the code, rails[0] is the one of the low signal, rails[1] is the one of the
-high signal.
-
 3. About Bands
 
 A band aims to categorize a duration, short or long. Therefore, a Rail is made
@@ -262,11 +259,11 @@ In the end, a Track provides a convenient interface to the caller.
 
 5. Overall schema
 
-track ->  rails[0] ->  b_short = manage short duration on LOW signal
-      |            `-> b_long = manage long duration on LOW signal
+track ->  r_low  ->  b_short = manage short duration on LOW signal
+      |          `-> b_long  = manage long duration on LOW signal
       |
-      `-> rails[1] ->  b_short = manage short duration on HIGH signal
-                   `-> b_long = manage long duration on HIGH signal
+      `-> r_high ->  b_short = manage short duration on HIGH signal
+                 `-> b_long  = manage long duration on HIGH signal
 
 */
 
@@ -347,7 +344,7 @@ class Rail {
         bool rail_eat(unsigned long d);
         void reset();
         void rail_debug() const;
-        byte get_nth_bit(byte n) const;
+//        byte get_nth_bit(byte n) const;
         byte get_band_count() const;
 };
 
@@ -498,9 +495,9 @@ void Rail::rail_debug() const {
     }
 }
 
-byte Rail::get_nth_bit(byte n) const {
-    return !!(recorded & (uint32_t)1 << n);
-}
+//byte Rail::get_nth_bit(byte n) const {
+//    return !!(recorded & (uint32_t)1 << n);
+//}
 
 byte Rail::get_band_count() const {
     return b_short.mid == b_long.mid ? (b_short.mid ? 1 : 0) : 2;
@@ -518,7 +515,8 @@ typedef enum {TRK_WAIT, TRK_RECV, TRK_DATA} trk_t;
 class Track {
     private:
         volatile trk_t trk;
-        Rail rails[2];
+        Rail r_low;
+        Rail r_high;
 
 #ifdef REC_TIMINGS
         unsigned int timings[80];
@@ -533,7 +531,6 @@ class Track {
         void track_eat(byte n, unsigned long d);
         void track_debug() const;
         byte get_nb_bits() const;
-        byte track_get_nth_bit(byte r, byte n) const;
 
         trk_t get_trk() const { return trk; }
         bool rails_have_2_bands() const;
@@ -563,8 +560,8 @@ void Track::track_eat(byte r, unsigned long d) {
 
     if (trk == TRK_WAIT) {
         if (r == 1 && d >= TRACK_MIN_INITSEQ_DURATION) {
-            rails[0].reset();
-            rails[1].reset();
+            r_low.reset();
+            r_high.reset();
             trk = TRK_RECV;
 #ifdef REC_TIMINGS
             timings[timing_pos++] = d;
@@ -575,21 +572,22 @@ void Track::track_eat(byte r, unsigned long d) {
         return;
     }
 
-    if (rails[r].status != RAIL_OPEN)
+    Rail *prail = (r == 0 ? &r_low : &r_high);
+    if (prail->status != RAIL_OPEN)
         return;
 
 #ifdef REC_TIMINGS
     timings[timing_pos++] = d;
 #endif
 
-    bool b = rails[r].rail_eat(d);
-    if (!b || (r == 1 && rails[0].status != RAIL_OPEN)) {
+    bool b = prail->rail_eat(d);
+    if (!b || (r == 1 && r_low.status != RAIL_OPEN)) {
 
 #ifdef TRACE
         serial_printf("T> b = %d\n", b);
 #endif
 
-        if (rails[0].index < TRACK_MIN_BITS) {
+        if (r_low.index < TRACK_MIN_BITS) {
 
 #ifdef TRACE
             serial_printf("T> P0\n");
@@ -602,26 +600,26 @@ void Track::track_eat(byte r, unsigned long d) {
             //   (r == 1 && d >= TRACK_MIN_INITSEQ_DURATION)
             track_eat(r, d);
         } else if (r == 1) {
-            int dec = -1;
-            if (rails[0].index >= 1 && rails[1].index >= 1) {
-                if (rails[0].index > rails[1].index) {
-                    dec = 0;
-                } else if (rails[1].index > rails[0].index) {
-                    dec = 1;
+            Rail *prail = nullptr;
+            if (r_low.index >= 1 && r_high.index >= 1) {
+                if (r_low.index > r_high.index) {
+                    prail = &r_low;
+                } else if (r_high.index > r_low.index) {
+                    prail = &r_high;
                 }
-                if (dec >= 0) {
-                    rails[dec].recorded >>= 1;
-                    rails[dec].index--;
+                if (prail) {
+                    prail->recorded >>= 1;
+                    prail->index--;
                 }
             }
-            if (rails[1].index != rails[0].index) {
+            if (r_high.index != r_low.index) {
                 FATAL;
             }
 
-            if (rails[0].status == RAIL_OPEN)
-                rails[0].status = RAIL_CLOSED;
-            if (rails[1].status == RAIL_OPEN)
-                rails[1].status = RAIL_CLOSED;
+            if (r_low.status == RAIL_OPEN)
+                r_low.status = RAIL_CLOSED;
+            if (r_high.status == RAIL_OPEN)
+                r_high.status = RAIL_CLOSED;
 
             trk = TRK_DATA;
         }
@@ -646,12 +644,12 @@ void Track::track_debug() const {
     } else {
         serial_printf("\"(UNKNOWN)\",");
     }
-    uint32_t xorval = rails[0].recorded ^ rails[1].recorded;
+    uint32_t xorval = r_low.recorded ^ r_high.recorded;
     if (trk != TRK_WAIT) {
         serial_printf("\"xorval\":0x%08lx,\n", xorval);
         for (byte i = 0; i < 2; ++i) {
-            serial_printf("    \"rail%d\":{\n", i);
-            rails[i].rail_debug();
+            serial_printf("    \"%s\":{\n", (i == 0 ? "r_low" : "r_high"));
+            (i == 0 ? &r_low : &r_high)->rail_debug();
             serial_printf("    }%s\n", i == 1 ? "" : ",");
         }
     }
@@ -668,11 +666,7 @@ void Track::track_debug() const {
 byte Track::get_nb_bits() const {
     if (trk == TRK_WAIT)
         return 0;
-    return rails[0].index < rails[1].index ? rails[0].index : rails[1].index;
-}
-
-byte Track::track_get_nth_bit(byte r, byte n) const {
-    return rails[r].get_nth_bit(n);
+    return r_low.index < r_high.index ? r_low.index : r_high.index;
 }
 
     // Returns true if both rails have 2 bands, meaning, the signal received
