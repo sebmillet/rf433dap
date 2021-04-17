@@ -31,9 +31,9 @@
 #include <Arduino.h>
 #include <avr/sleep.h>
 
-//#define SIMULATE
+#define SIMULATE
 //#define TRACE
-#define REC_TIMINGS
+//#define REC_TIMINGS
 
 
 // * *********************************** **************************************
@@ -262,11 +262,11 @@ In the end, a Track provides a convenient interface to the caller.
 
 5. Overall schema
 
-track ->  rails[0] ->  band[0] = manage short duration on LOW signal
-      |            `-> band[1] = manage long duration on LOW signal
+track ->  rails[0] ->  b_short = manage short duration on LOW signal
+      |            `-> b_long = manage long duration on LOW signal
       |
-      `-> rails[1] ->  band[0] = manage short duration on HIGH signal
-                   `-> band[1] = manage long duration on HIGH signal
+      `-> rails[1] ->  b_short = manage short duration on HIGH signal
+                   `-> b_long = manage long duration on HIGH signal
 
 */
 
@@ -336,7 +336,8 @@ class Rail {
     friend class Track;
 
     private:
-        Band band[2];
+        Band b_short;
+        Band b_long;
         uint32_t recorded;
         byte status;
         byte index;
@@ -358,8 +359,8 @@ inline void Rail::reset() {
     status = RAIL_OPEN;
     index = 0;
 
-    for (byte i = 0; i < 2; ++i)
-        band[i].mid = 0;
+    b_short.mid = 0;
+    b_long.mid = 0;
 
     recorded = 0;
 }
@@ -375,17 +376,17 @@ bool Rail::rail_eat(unsigned long d) {
         return false;
 
     byte count_got_it = 0;
-    if (band[0].test_value(d))
+    if (b_short.test_value(d))
         ++count_got_it;
-    if (band[1].test_value(d))
+    if (b_long.test_value(d))
         ++count_got_it;
 
     byte band_count = get_band_count();
 
 #ifdef TRACE
         // FIXME
-    serial_printf("R> band[0].got_it = %d, band[1].got_it = %d, "
-                  "band_count = %d\n", band[0].got_it, band[1].got_it,
+    serial_printf("R> b_short.got_it = %d, b_long.got_it = %d, "
+                  "band_count = %d\n", b_short.got_it, b_long.got_it,
                   band_count);
     for (int i = 0; i < 2; ++i) {
         serial_printf("R>  [%i]: inf = %lu, mid = %lu, sup = %lu\n", i,
@@ -394,16 +395,16 @@ bool Rail::rail_eat(unsigned long d) {
 #endif
 
     if (band_count == 1 && !count_got_it) {
-        byte new_band;
+        Band *pband;
         unsigned long small;
         unsigned long big;
-        if (d < band[0].inf) {
-            new_band = 0;
+        if (d < b_short.inf) {
+            pband = &b_short;
             small = d;
-            big = band[0].mid;
-        } else if (d > band[0].sup) {
-            new_band = 1;
-            small = band[0].mid;
+            big = b_short.mid;
+        } else if (d > b_short.sup) {
+            pband = &b_long;
+            small = b_short.mid;
             big = d;
         } else {
                 // Should not happen.
@@ -417,8 +418,8 @@ bool Rail::rail_eat(unsigned long d) {
 #endif
 
         if ((small << 2) >= big) {
-            band[new_band].init(d);
-            if (band[new_band].got_it) {
+            pband->init(d);
+            if (pband->got_it) {
 
 #ifdef TRACE
                 serial_printf("R> P1\n");
@@ -429,10 +430,10 @@ bool Rail::rail_eat(unsigned long d) {
 
                     // FIXME
                     //   Test if intervals overlap?
-                    //   That is, test if band[0].sup >= band[1].inf?
+                    //   That is, test if b_short.sup >= b_long.inf?
                 ;
 
-                if (new_band == 0) {
+                if (pband == &b_short) {
                         // The first N signals received ('N' equals 'index')
                         // happened to be LONG ones => to be recorded as as many
                         // ONEs.
@@ -448,16 +449,16 @@ bool Rail::rail_eat(unsigned long d) {
     }
 
     if (!count_got_it || (band_count == 2 && count_got_it == 2)) {
-        status = (d >= (band[0].mid << 1) && d >= (band[1].mid << 1))
+        status = (d >= (b_short.mid << 1) && d >= (b_long.mid << 1))
                  ? RAIL_STP_RCVD : RAIL_ERROR;
         return false;
     }
 
     if (band_count == 2) {
-        if (band[0].got_it == band[1].got_it) {
+        if (b_short.got_it == b_long.got_it) {
             FATAL;
         }
-        recorded = (recorded << 1) | (band[0].got_it ? 0 : 1);
+        recorded = (recorded << 1) | (b_short.got_it ? 0 : 1);
     }
     if (++index == (8 * sizeof(recorded))) {
         status = RAIL_FULL;
@@ -482,13 +483,15 @@ void Rail::rail_debug() const {
     } else {
         serial_printf("\"unknown\",");
     }
-    serial_printf("\"n\":%d,\n", band[0].mid == band[1].mid ? 1 : 2);
+    serial_printf("\"n\":%d,\n", b_short.mid == b_long.mid ? 1 : 2);
     for (byte i = 0; i < 2; ++i) {
-        serial_printf("      \"band%d\":{", i);
+        serial_printf("      \"%s\":{", (i == 0 ? "b_short" : "b_long"));
         serial_printf("\"inf\":%lu,\"mid\":%lu,\"sup\":%lu",
-                      band[i].inf, band[i].mid, band[i].sup);
-        if (band[0].mid == band[1].mid) {
-            serial_printf("},\n      \"band1\":\"*****\"\n");
+                      (i == 0 ? b_short.inf : b_long.inf),
+                      (i == 0 ? b_short.mid : b_long.mid),
+                      (i == 0 ? b_short.sup : b_long.sup));
+        if (b_short.mid == b_long.mid) {
+            serial_printf("},\n      \"b_long\":\"*****\"\n");
             break;
         }
         serial_printf("}%s\n", i == 1 ? "" : ",");
@@ -500,7 +503,7 @@ byte Rail::get_nth_bit(byte n) const {
 }
 
 byte Rail::get_band_count() const {
-    return band[0].mid == band[1].mid ? (band[0].mid ? 1 : 0) : 2;
+    return b_short.mid == b_long.mid ? (b_short.mid ? 1 : 0) : 2;
 }
 
 

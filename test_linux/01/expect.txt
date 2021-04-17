@@ -4,13 +4,13 @@
     "trk":"TRK_DATA","xorval":0xffffffff,
     "rail0":{
       "bits":32,"v":0xb6956d00,"railstatus":"full","n":2,
-      "band0":{"inf":402,"mid":536,"sup":670},
-      "band1":{"inf":927,"mid":1236,"sup":1545}
+      "b_short":{"inf":402,"mid":536,"sup":670},
+      "b_long":{"inf":927,"mid":1236,"sup":1545}
     },
     "rail1":{
       "bits":32,"v":0x496a92ff,"railstatus":"full","n":2,
-      "band0":{"inf":432,"mid":576,"sup":720},
-      "band1":{"inf":960,"mid":1280,"sup":1600}
+      "b_short":{"inf":432,"mid":576,"sup":720},
+      "b_long":{"inf":960,"mid":1280,"sup":1600}
     }
   }
 ]
