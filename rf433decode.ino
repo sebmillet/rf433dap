@@ -31,9 +31,9 @@
 #include <Arduino.h>
 #include <avr/sleep.h>
 
-//#define SIMULATE
+#define SIMULATE
 //#define TRACE
-#define REC_TIMINGS
+//#define REC_TIMINGS
 
 #define MAX_DURATION 65535
 
@@ -707,7 +707,7 @@ Track track;
 SerialLine sl;
 char buffer[SerialLine::buf_len];
 
-uint16_t sim_timings[130];
+uint16_t sim_timings[260];
 uint16_t sim_timings_count = 0;
 
 unsigned int sim_int_count = 0;
@@ -731,13 +731,7 @@ void handle_interrupt() {
         return;
     }
 
-#ifndef SIMULATE
-    unsigned long d = t - last_t;
-    last_t = t;
-    byte r = (digitalRead(PIN_RFINPUT) == HIGH ? 1 : 0);
-    if (d > MAX_DURATION)
-        d = MAX_DURATION;
-#else
+#ifdef SIMULATE
     unsigned long d;
     byte r = sim_int_count % 2;
     if (sim_int_count >= sim_timings_count) {
@@ -745,6 +739,12 @@ void handle_interrupt() {
     } else {
         d = sim_timings[sim_int_count++];
     }
+#else
+    unsigned long d = t - last_t;
+    last_t = t;
+    byte r = (digitalRead(PIN_RFINPUT) == HIGH ? 1 : 0);
+    if (d > MAX_DURATION)
+        d = MAX_DURATION;
 #endif
 
     track.track_eat(r, d);

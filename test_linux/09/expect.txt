@@ -1,0 +1,72 @@
+[
+  {
+    "N":250,"start":0,"end":27,
+    "trk":"TRK_DATA","xorval":0x00000000,
+    "r_low":{
+      "bits":12,"v":0x0000068d,"railstatus":"closed","n":2,
+      "b_short":{"inf":456,"mid":608,"sup":760},
+      "b_long":{"inf":969,"mid":1292,"sup":1615}
+    },
+    "r_high":{
+      "bits":12,"v":0x0000068d,"railstatus":"stop received","n":2,
+      "b_short":{"inf":543,"mid":724,"sup":905},
+      "b_long":{"inf":1047,"mid":1396,"sup":1745}
+    }
+  },
+  {
+    "N":250,"start":28,"end":79,
+    "trk":"TRK_DATA","xorval":0x00000000,
+    "r_low":{
+      "bits":12,"v":0x00000555,"railstatus":"closed","n":2,
+      "b_short":{"inf":441,"mid":588,"sup":735},
+      "b_long":{"inf":951,"mid":1268,"sup":1585}
+    },
+    "r_high":{
+      "bits":12,"v":0x00000555,"railstatus":"stop received","n":2,
+      "b_short":{"inf":564,"mid":752,"sup":940},
+      "b_long":{"inf":1065,"mid":1420,"sup":1775}
+    }
+  },
+  {
+    "N":250,"start":80,"end":131,
+    "trk":"TRK_DATA","xorval":0x00000000,
+    "r_low":{
+      "bits":12,"v":0x00000555,"railstatus":"closed","n":2,
+      "b_short":{"inf":447,"mid":596,"sup":745},
+      "b_long":{"inf":951,"mid":1268,"sup":1585}
+    },
+    "r_high":{
+      "bits":12,"v":0x00000555,"railstatus":"stop received","n":2,
+      "b_short":{"inf":561,"mid":748,"sup":935},
+      "b_long":{"inf":1071,"mid":1428,"sup":1785}
+    }
+  },
+  {
+    "N":250,"start":132,"end":183,
+    "trk":"TRK_DATA","xorval":0x00000000,
+    "r_low":{
+      "bits":12,"v":0x00000555,"railstatus":"closed","n":2,
+      "b_short":{"inf":429,"mid":572,"sup":715},
+      "b_long":{"inf":942,"mid":1256,"sup":1570}
+    },
+    "r_high":{
+      "bits":12,"v":0x00000555,"railstatus":"stop received","n":2,
+      "b_short":{"inf":582,"mid":776,"sup":970},
+      "b_long":{"inf":1086,"mid":1448,"sup":1810}
+    }
+  },
+  {
+    "N":250,"start":184,"end":235,
+    "trk":"TRK_DATA","xorval":0x00000000,
+    "r_low":{
+      "bits":12,"v":0x00000555,"railstatus":"closed","n":2,
+      "b_short":{"inf":432,"mid":576,"sup":720},
+      "b_long":{"inf":933,"mid":1244,"sup":1555}
+    },
+    "r_high":{
+      "bits":12,"v":0x00000555,"railstatus":"stop received","n":2,
+      "b_short":{"inf":576,"mid":768,"sup":960},
+      "b_long":{"inf":1092,"mid":1456,"sup":1820}
+    }
+  }
+]
