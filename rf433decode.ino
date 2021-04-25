@@ -35,7 +35,7 @@
 
 //#define SIMULATE
 //#define TRACE
-//#define REC_TIMINGS
+#define REC_TIMINGS
 //#define TRACKDEBUG
 #define TRACKSECTIONDEBUG
 
@@ -269,6 +269,7 @@ struct Band {
     uint16_t sup;
 
     bool got_it;
+
     bool test_value_init_if_needed(uint16_t d);
     bool test_value(uint16_t d);
 
@@ -611,12 +612,6 @@ class Track {
 
         byte prev_r;
 
-#ifdef REC_TIMINGS
-        uint16_t timings[80];
-        uint16_t exec_d[80];
-        unsigned int timing_pos;
-#endif
-
         uint16_t low_short;
         uint16_t low_long;
         uint16_t high_short;
@@ -641,10 +636,6 @@ class Track {
 
         trk_t get_trk() const { return trk; }
         bool rails_have_2_bands() const;
-
-#ifdef REC_TIMINGS
-        void record_exec_d(uint16_t d);
-#endif
 };
 
 Track::Track() {
@@ -654,9 +645,6 @@ Track::Track() {
 inline void Track::treset_hard() {
     trk = TRK_WAIT;
     nb_sections = 0;
-#ifdef REC_TIMINGS
-    timing_pos = 0;
-#endif
 }
 
 inline void Track::track_eat(byte r, uint16_t d) {
@@ -671,10 +659,6 @@ inline void Track::track_eat(byte r, uint16_t d) {
             r_high.reset();
             prev_r = r;
             trk = TRK_RECV;
-#ifdef REC_TIMINGS
-            timings[timing_pos++] = d;
-            assert(timing_pos < sizeof(timings) / sizeof(*timings));
-#endif
         }
         return;
     } else if (trk != TRK_RECV) {
@@ -690,11 +674,6 @@ inline void Track::track_eat(byte r, uint16_t d) {
     Rail *prail = (r == 0 ? &r_low : &r_high);
     if (prail->status != RAIL_OPEN)
         return;
-
-#ifdef REC_TIMINGS
-    timings[timing_pos++] = d;
-    assert(timing_pos < sizeof(timings) / sizeof(*timings));
-#endif
 
     bool b = prail->rail_eat(d);
     if (r == 1 && (!b || r_low.status != RAIL_OPEN)) {
@@ -826,6 +805,12 @@ Notations:
 #endif
 
         if (record_current_section) {
+
+                // FIXME!!!
+                // FIXME!!!
+//            trk = TRK_DATA;
+//            return;
+
             Section *psec = &sections[nb_sections++];
             psec->sts = sts;
             psec->rec_low = r_low.rec;
@@ -838,11 +823,6 @@ Notations:
             if (trk == TRK_RECV) {
                 r_low.reset_soft();
                 r_high.reset_soft();
-
-#ifdef REC_TIMINGS
-                timing_pos = 0;
-#endif
-
             }
         } else {
             if (nb_sections) {
@@ -857,13 +837,6 @@ Notations:
 
     }
 }
-
-#ifdef REC_TIMINGS
-void Track::record_exec_d(uint16_t d) {
-    if (trk == TRK_RECV && timing_pos >= 1)
-        exec_d[timing_pos - 1] = d;
-}
-#endif
 
 #ifdef TRACKDEBUG
 const char* trk_names[] = {
@@ -883,13 +856,6 @@ void Track::track_debug() const {
         }
     }
 
-#ifdef REC_TIMINGS
-    dbgf("%4s, %4d", "", timings[0]);
-    for (unsigned int i = 1; i < timing_pos - 1; i += 2) {
-        dbgf("%4d, %4d  |  %5d, %5d", timings[i], timings[i + 1],
-                      exec_d[i], exec_d[i + 1]);
-    }
-#endif
 }
 #endif
 
@@ -940,6 +906,12 @@ bool Track::rails_have_2_bands() const {
 
 Track track;
 
+#ifdef REC_TIMINGS
+uint16_t ih_timings[80];
+uint16_t ih_exec[80];
+unsigned int ih_timing_pos = 0;
+#endif
+
 bool handle_interrupt_in_progress = false;
 void handle_interrupt() {
     if (handle_interrupt_in_progress)
@@ -969,15 +941,19 @@ void handle_interrupt() {
     unsigned long d = t - last_t;
     last_t = t;
     byte r = (digitalRead(PIN_RFINPUT) == HIGH ? 1 : 0);
-    if (d > MAX_DURATION)
-        d = MAX_DURATION;
 #endif
 
+    if (d > MAX_DURATION)
+        d = MAX_DURATION;
     track.track_eat(r, d);
 
 #ifdef REC_TIMINGS
     unsigned long t1 = micros();
-    track.record_exec_d(t1 - t);
+    if (ih_timing_pos < sizeof(ih_timings) / sizeof(*ih_timings)) {
+        ih_timings[ih_timing_pos] = d;
+        ih_exec[ih_timing_pos] = t1 - t;
+        ++ih_timing_pos;
+    }
 #endif
 
     handle_interrupt_in_progress = false;
@@ -1079,6 +1055,10 @@ void loop() {
 
     attachInterrupt(INT_RFINPUT, &handle_interrupt, CHANGE);
     while (track.get_trk() != TRK_DATA) {
+
+        if (track.get_trk() == TRK_WAIT)
+            ih_timing_pos = 0;
+
         sleep_mode();
     }
     detachInterrupt(INT_RFINPUT);
@@ -1087,6 +1067,13 @@ void loop() {
     track.track_debug_sections();
 #endif
 
+#endif
+
+#ifdef REC_TIMINGS
+    for (unsigned int i = 0; i < ih_timing_pos - 1; i += 2) {
+        dbgf("%4u, %4u  |  %5u, %5u", ih_timings[i], ih_timings[i + 1],
+             ih_exec[i], ih_exec[i + 1]);
+    }
 #endif
 
 }
