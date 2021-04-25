@@ -1,6 +1,6 @@
 [
   {
-    "N":26,"start":0,"end":19,
+    "N":26,"start":0,"end":23,
     "trk":TRK_RECV,"xorval":0x00000002,
     "r_low":{
       "bits":8,"v":0x00000002,"railstatus":"stop received","n":2,

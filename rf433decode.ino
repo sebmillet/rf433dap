@@ -35,7 +35,7 @@
 
 //#define SIMULATE
 //#define TRACE
-#define REC_TIMINGS
+//#define REC_TIMINGS
 //#define TRACKDEBUG
 #define TRACKSECTIONDEBUG
 
@@ -548,11 +548,6 @@ void Rail::rail_debug() const {
                  (i == 0 ? b_short.sup : (i == 1 ? b_long.sup : b_sep.sup)),
                  (i == 2 ? "" : ",")
              );
-//        dbgf("\"inf\":%u,\"mid\":%u,\"sup\":%u",
-//            (i == 0 ? b_short.inf : (i == 1 ? b_long.inf : b_sep.inf)),
-//            (i == 0 ? b_short.mid : (i == 1 ? b_long.mid : b_sep.mid)),
-//            (i == 0 ? b_short.sup : (i == 1 ? b_long.sup : b_sep.sup)));
-//        dbgf("}%s", i == 1 ? "" : ",");
     }
 }
 #endif
@@ -632,7 +627,6 @@ class Track {
 #ifdef TRACKSECTIONDEBUG
         void track_debug_sections() const;
 #endif
-//        byte get_nb_bits() const;
 
         trk_t get_trk() const { return trk; }
         bool rails_have_2_bands() const;
@@ -807,7 +801,6 @@ Notations:
         if (record_current_section) {
 
                 // FIXME!!!
-                // FIXME!!!
 //            trk = TRK_DATA;
 //            return;
 
@@ -881,12 +874,6 @@ void Track::track_debug_sections() const {
 }
 #endif
 
-//byte Track::get_nb_bits() const {
-//    if (trk == TRK_WAIT)
-//        return 0;
-//    return r_low.index < r_high.index ? r_low.index : r_high.index;
-//}
-
     // Returns true if both rails have 2 bands, meaning, the signal received
     // showed both short and long signal durations.
     // If one rail has one band, that means we don't know if signal on this band
@@ -904,30 +891,33 @@ bool Track::rails_have_2_bands() const {
 // * Interruptions ************************************************************
 // * ************* ************************************************************
 
-Track track;
-
 #ifdef REC_TIMINGS
-uint16_t ih_timings[80];
+uint16_t ih_dbg_timings[80];
 uint16_t ih_exec[80];
-unsigned int ih_timing_pos = 0;
+unsigned int ih_dbg_timing_pos = 0;
 #endif
 
-bool handle_interrupt_in_progress = false;
+typedef struct {
+    byte r;
+    uint16_t d;
+} IH_timing_t;
+
+    // IMPORTANT
+    //   IH_MASK must be equal to the size of IH_timings - 1.
+    //   The size of IH_timings must be a power of 2.
+    //   Thus, IH_MASK allows to quickly calculate modulo, while walking through
+    //   IH_timings.
+#define IH_SIZE 32
+#define IH_MASK (IH_SIZE - 1)
+IH_timing_t IH_timings[IH_SIZE];
+volatile unsigned char IH_write_head = 0;
+volatile unsigned char IH_read_head = 0;
+unsigned char IH_max_pending_timings = 0;
+
+    // This one fills the array IH_timings
 void handle_interrupt() {
-    if (handle_interrupt_in_progress)
-        return;
-    handle_interrupt_in_progress = true;
-    sei();
-
     static unsigned long last_t = 0;
-
     const unsigned long t = micros();
-
-    if (!last_t) {
-        last_t = t;
-        handle_interrupt_in_progress = false;
-        return;
-    }
 
 #ifdef SIMULATE
     unsigned long d;
@@ -937,6 +927,8 @@ void handle_interrupt() {
     } else {
         d = sim_timings[sim_int_count++];
     }
+    (void)last_t;
+    (void)t;
 #else
     unsigned long d = t - last_t;
     last_t = t;
@@ -945,19 +937,52 @@ void handle_interrupt() {
 
     if (d > MAX_DURATION)
         d = MAX_DURATION;
-    track.track_eat(r, d);
 
-#ifdef REC_TIMINGS
-    unsigned long t1 = micros();
-    if (ih_timing_pos < sizeof(ih_timings) / sizeof(*ih_timings)) {
-        ih_timings[ih_timing_pos] = d;
-        ih_exec[ih_timing_pos] = t1 - t;
-        ++ih_timing_pos;
+    unsigned char next_IH_write_head = (IH_write_head + 1) & IH_MASK;
+    if (next_IH_write_head != IH_read_head) {
+        IH_write_head = next_IH_write_head;
+        IH_timings[IH_write_head].r = r;
+        IH_timings[IH_write_head].d = d;
     }
-#endif
+}
 
-    handle_interrupt_in_progress = false;
-    return;
+    // This one consumes what got filled in the array IH_timings by
+    // handle_interrupt().
+    // Returns true if there was data in IH_timings, false otherwise.
+bool process_interrupt_timing(Track *ptrack) {
+
+        // FIXME
+        //   I don't think the '+ IH_SIZE' term is necessary, as we are working
+        //   in unsigned arithmetic... But I prefer to leave it for now.
+    unsigned char IH_pending_timings =
+        ((IH_write_head + IH_SIZE) - IH_read_head) & IH_MASK;
+    if (IH_pending_timings > IH_max_pending_timings)
+        IH_max_pending_timings = IH_pending_timings;
+
+    bool ret;
+
+// CRITICAL SECTION - NO INTERRUPTS !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    cli();
+
+    if (IH_read_head != IH_write_head) {
+        IH_timing_t timing = IH_timings[IH_read_head];
+        IH_read_head = (IH_read_head + 1) & IH_MASK;
+
+        sei();
+// END OF CRITICAL SECTION (CASE 1) !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+        ptrack->track_eat(timing.r, timing.d);
+        ret = true;
+
+    } else {
+
+        sei();
+// END OF CRITICAL SECTION (CASE 2) !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+        ret = false;
+    }
+
+    return ret;
 }
 
 
@@ -1011,6 +1036,8 @@ void setup() {
     set_sleep_mode(SLEEP_MODE_IDLE);
 }
 
+Track track;
+
 void loop() {
 
 #ifdef SIMULATE
@@ -1031,8 +1058,14 @@ void loop() {
     track.treset_hard();
     sim_int_count_svg = sim_int_count;
     while (track.get_trk() != TRK_DATA && sim_int_count < sim_timings_count) {
-        handle_interrupt();
+        for (int i = 0; i < 6; ++i)
+            handle_interrupt();
+        while (track.get_trk() != TRK_DATA && process_interrupt_timing(&track)) {
+        }
     }
+#ifdef TRACKSECTIONDEBUG
+    dbgf("IH_max_pending_timings = %d", IH_max_pending_timings);
+#endif
 
 #ifdef TRACKDEBUG
     if (sim_int_count >= sim_timings_count) {
@@ -1055,23 +1088,29 @@ void loop() {
 
     attachInterrupt(INT_RFINPUT, &handle_interrupt, CHANGE);
     while (track.get_trk() != TRK_DATA) {
+        while (track.get_trk() != TRK_DATA && process_interrupt_timing(&track)) {
+        }
 
+#ifdef REC_TIMINGS
         if (track.get_trk() == TRK_WAIT)
-            ih_timing_pos = 0;
+            ih_dbg_timing_pos = 0;
+#endif
 
-        sleep_mode();
+//        sleep_mode();
+        delay(1);
     }
     detachInterrupt(INT_RFINPUT);
 
 #ifdef TRACKSECTIONDEBUG
+    dbgf("IH_max_pending_timings = %d", IH_max_pending_timings);
     track.track_debug_sections();
 #endif
 
 #endif
 
 #ifdef REC_TIMINGS
-    for (unsigned int i = 0; i < ih_timing_pos - 1; i += 2) {
-        dbgf("%4u, %4u  |  %5u, %5u", ih_timings[i], ih_timings[i + 1],
+    for (unsigned int i = 0; i < ih_dbg_timing_pos - 1; i += 2) {
+        dbgf("%4u, %4u  |  %5u, %5u", ih_dbg_timings[i], ih_dbg_timings[i + 1],
              ih_exec[i], ih_exec[i + 1]);
     }
 #endif
