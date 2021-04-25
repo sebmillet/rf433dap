@@ -4,8 +4,8 @@
     "trk":TRK_RECV,"xorval":0x00000002,
     "r_low":{
       "bits":8,"v":0x00000002,"railstatus":"stop received","n":2,
-      "b_short":{"inf":187,"mid":249,"sup":311},
-      "b_long":{"inf":300,"mid":400,"sup":500},
+      "b_short":{"inf":93,"mid":249,"sup":311},
+      "b_long":{"inf":349,"mid":400,"sup":650},
       "b_sep":{"inf":562,"mid":900,"sup":1800}
     },
     "r_high":{

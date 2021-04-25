@@ -33,11 +33,11 @@
 #include <Arduino.h>
 #include <avr/sleep.h>
 
-//#define SIMULATE
+#define SIMULATE
 //#define TRACE
 //#define REC_TIMINGS
-//#define TRACKDEBUG
-#define TRACKSECTIONDEBUG
+#define TRACKDEBUG
+//#define TRACKSECTIONDEBUG
 
 //#define DEBUG
 
@@ -274,8 +274,8 @@ struct Band {
     bool test_value(uint16_t d);
 
     void reset();
-    void init(uint16_t d);
-    void init_sep(uint16_t d);
+    bool init(uint16_t d);
+    bool init_sep(uint16_t d);
 };
 
 inline void Band::reset() {
@@ -286,32 +286,42 @@ inline void Band::reset() {
     mid = 0;
 }
 
-inline void Band::init(uint16_t d) {
+inline bool Band::init(uint16_t d) {
+
 #ifdef TRACE
     dbgf("B> init: %u", d);
 #endif
+
     if (d >= BAND_MIN_D && d <= BAND_MAX_D) {
         mid = d;
         uint16_t d_divided_by_4 = d >> 2;
         inf = d - d_divided_by_4;
         sup = d + d_divided_by_4;
         got_it = true;
-    } else
+    } else {
         got_it = false;
+    }
+
+    return got_it;
 }
 
-inline void Band::init_sep(uint16_t d) {
+inline bool Band::init_sep(uint16_t d) {
+
 #ifdef TRACE
     dbgf("BSEP> init: %u", d);
 #endif
+
     uint32_t tmp = d;
     tmp <<= 1;
-    if (tmp > 65535)
-        tmp = 65535;
+    if (tmp > 65534)
+        tmp = 65534;
     sup = tmp;
     inf = d >> 1;
     inf += (inf >> 2);
     mid = d;
+
+    got_it = true;
+    return got_it;
 }
 
 inline bool Band::test_value_init_if_needed(uint16_t d) {
@@ -465,12 +475,19 @@ inline bool Rail::rail_eat(uint16_t d) {
 #endif
 
         if ((small << 2) >= big) {
-            pband->init(d);
-            if (pband->got_it) {
+            if (pband->init(d)) {
 
 #ifdef TRACE
                 dbg("R> P1");
 #endif
+
+                    // As we now know who's who (b_short is b_short and b_long
+                    // is b_long, yes), we can adjust boundaries accordingly.
+
+                b_short.inf = (b_short.mid >> 1) - (b_short.mid >> 3);
+
+                b_long.inf = b_short.sup + (b_short.sup >> 3);
+                b_long.sup = b_long.mid + (b_long.mid >> 1) + (b_long.mid >> 3);
 
                 count_got_it = 1;
                 band_count = 2;
@@ -500,11 +517,13 @@ inline bool Rail::rail_eat(uint16_t d) {
                 // BAND_MAX_D is 30000, and multiplying .mid by 2 will produce a
                 // maximum value of 60000, that's OK for an unsigned 16-bit int.
             if (d >= (b_short.mid << 1) && d >= (b_long.mid << 1)) {
+                    // We can end up with an overlap between b_sep and b_long.
+                    // Not an issue.
                 b_sep.init_sep(d);
             }
         }
         status = (b_sep.test_value(d) ? RAIL_STP_RCVD : RAIL_ERROR);
-            // FIXME
+            // FIXME?
             //   A big separator (bigger than b_sep.sup) could be seen as a
             //   TERMINATION separator (or INITIALIZATION SEQUENCE of the next
             //   signal arriving, that's just about the same).
@@ -620,7 +639,7 @@ class Track {
         Track();
 
         void treset_hard();
-        void track_eat(byte n, uint16_t d);
+        void track_eat(byte r, uint16_t d);
 #ifdef TRACKDEBUG
         void track_debug() const;
 #endif
@@ -760,6 +779,7 @@ Notations:
 
 #ifdef TRACKDEBUG
         bool do_track_debug = false;
+        (void)do_track_debug;
 #endif
 
         if (r_low.index < TRACK_MIN_BITS || r_high.index < TRACK_MIN_BITS) {
@@ -781,20 +801,16 @@ Notations:
 
         }
 
-#ifdef TRACKDEBUG
+#if defined(SIMULATE) && defined(TRACKDEBUG)
 #ifdef TRACE
         dbgf("T> reccursec=%i, sts=%i", record_current_section, sts);
 #endif
         if (do_track_debug) {
-#ifdef SIMULATE
             dbgf("%s  {", counter >= 2 ? ",\n" : "");
             dbgf("    \"N\":%d,\"start\":%u,\"end\":%u,",
                 sim_timings_count, sim_int_count_svg, sim_int_count - 1);
-#endif
             track_debug();
-#ifdef SIMULATE
             dbg("  }");
-#endif
         }
 #endif
 
@@ -914,7 +930,59 @@ volatile unsigned char IH_write_head = 0;
 volatile unsigned char IH_read_head = 0;
 unsigned char IH_max_pending_timings = 0;
 
+// ========== FIXME
+//#define NB_VERYRECENT 4
+//uint16_t veryrecent[NB_VERYRECENT];
+//Track memorized_track;
+//unsigned int memorized_track_count = 0;
+//void initialize_veryrecent() {
+//    for (unsigned short i = 0; i < NB_VERYRECENT; ++i) {
+//        veryrecent[i] = 0;
+//    }
+//}
+//void check_veryrecent(Track *ptrack, byte r, uint16_t d) {
+//    if (r == 1 && d >= 1100 && d <= 1500) {
+
+//        uint16_t prev = veryrecent[NB_VERYRECENT - 1];
+//        uint16_t prev2 = veryrecent[NB_VERYRECENT - 2];
+//        uint16_t prev3 = veryrecent[NB_VERYRECENT - 3];
+//        uint16_t prev4 = veryrecent[NB_VERYRECENT - 4];
+//        if (prev >= 1100 && prev <= 1500 && prev2 >= 450 && prev2 <= 800
+//                && prev3 >= 450 && prev3 <= 800 && prev4 >= 4000) {
+//            if (!memorized_track_count)
+//                memorized_track = *ptrack;
+//            ++memorized_track_count;
+//        }
+
+//        uint16_t prev = veryrecent[NB_VERYRECENT - 1];
+//        uint16_t prev2 = veryrecent[NB_VERYRECENT - 2];
+//        uint16_t prev3 = veryrecent[NB_VERYRECENT - 3];
+//        uint16_t prev4 = veryrecent[NB_VERYRECENT - 4];
+//        if (prev >= 450 && prev <= 800 && prev2 >= 450 && prev2 <= 800
+//                && prev3 >= 1000 && prev3 <= 1500 && prev4 >= 4000) {
+//            memorized_track = *ptrack;
+//            memorized_track_count = true;
+//        }
+
+
+//    }
+//    for (unsigned short i = 0; i < NB_VERYRECENT - 1; ++i) {
+//        veryrecent[i] = veryrecent[i + 1];
+//    }
+//    veryrecent[NB_VERYRECENT - 1] = d;
+//}
+//void memorized_track_debug() {
+//    dbgf("== memorized_track_count = %i", memorized_track_count);
+//    if (memorized_track_count) {
+//        memorized_track.track_debug();
+//    }
+//    dbg("==");
+//}
+// ==========
+
     // This one fills the array IH_timings
+
+// CRITICAL SECTION - NO INTERRUPTS !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 void handle_interrupt() {
     static unsigned long last_t = 0;
     const unsigned long t = micros();
@@ -945,10 +1013,12 @@ void handle_interrupt() {
         IH_timings[IH_write_head].d = d;
     }
 }
+// END OF CRITICAL SECTION !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
     // This one consumes what got filled in the array IH_timings by
     // handle_interrupt().
     // Returns true if there was data in IH_timings, false otherwise.
+
 bool process_interrupt_timing(Track *ptrack) {
 
         // FIXME
@@ -970,6 +1040,8 @@ bool process_interrupt_timing(Track *ptrack) {
 
         sei();
 // END OF CRITICAL SECTION (CASE 1) !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+//        check_veryrecent(ptrack, timing.r, timing.d);
 
         ptrack->track_eat(timing.r, timing.d);
         ret = true;
@@ -1040,6 +1112,8 @@ Track track;
 
 void loop() {
 
+//    initialize_veryrecent();
+
 #ifdef SIMULATE
 
     if (sim_int_count >= sim_timings_count)
@@ -1081,7 +1155,7 @@ void loop() {
         dbg("----- END TEST -----");
     }
 
-#else
+#else // SIMULATE
 
     dbg("Waiting for signal");
     track.treset_hard();
@@ -1104,9 +1178,10 @@ void loop() {
 #ifdef TRACKSECTIONDEBUG
     dbgf("IH_max_pending_timings = %d", IH_max_pending_timings);
     track.track_debug_sections();
+//    memorized_track_debug();
 #endif
 
-#endif
+#endif // SIMULATE
 
 #ifdef REC_TIMINGS
     for (unsigned int i = 0; i < ih_dbg_timing_pos - 1; i += 2) {
