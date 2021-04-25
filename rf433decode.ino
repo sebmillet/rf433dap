@@ -815,11 +815,6 @@ Notations:
 #endif
 
         if (record_current_section) {
-
-                // FIXME!!!
-//            trk = TRK_DATA;
-//            return;
-
             Section *psec = &sections[nb_sections++];
             psec->sts = sts;
             psec->rec_low = r_low.rec;
@@ -929,56 +924,6 @@ IH_timing_t IH_timings[IH_SIZE];
 volatile unsigned char IH_write_head = 0;
 volatile unsigned char IH_read_head = 0;
 unsigned char IH_max_pending_timings = 0;
-
-// ========== FIXME
-//#define NB_VERYRECENT 4
-//uint16_t veryrecent[NB_VERYRECENT];
-//Track memorized_track;
-//unsigned int memorized_track_count = 0;
-//void initialize_veryrecent() {
-//    for (unsigned short i = 0; i < NB_VERYRECENT; ++i) {
-//        veryrecent[i] = 0;
-//    }
-//}
-//void check_veryrecent(Track *ptrack, byte r, uint16_t d) {
-//    if (r == 1 && d >= 1100 && d <= 1500) {
-
-//        uint16_t prev = veryrecent[NB_VERYRECENT - 1];
-//        uint16_t prev2 = veryrecent[NB_VERYRECENT - 2];
-//        uint16_t prev3 = veryrecent[NB_VERYRECENT - 3];
-//        uint16_t prev4 = veryrecent[NB_VERYRECENT - 4];
-//        if (prev >= 1100 && prev <= 1500 && prev2 >= 450 && prev2 <= 800
-//                && prev3 >= 450 && prev3 <= 800 && prev4 >= 4000) {
-//            if (!memorized_track_count)
-//                memorized_track = *ptrack;
-//            ++memorized_track_count;
-//        }
-
-//        uint16_t prev = veryrecent[NB_VERYRECENT - 1];
-//        uint16_t prev2 = veryrecent[NB_VERYRECENT - 2];
-//        uint16_t prev3 = veryrecent[NB_VERYRECENT - 3];
-//        uint16_t prev4 = veryrecent[NB_VERYRECENT - 4];
-//        if (prev >= 450 && prev <= 800 && prev2 >= 450 && prev2 <= 800
-//                && prev3 >= 1000 && prev3 <= 1500 && prev4 >= 4000) {
-//            memorized_track = *ptrack;
-//            memorized_track_count = true;
-//        }
-
-
-//    }
-//    for (unsigned short i = 0; i < NB_VERYRECENT - 1; ++i) {
-//        veryrecent[i] = veryrecent[i + 1];
-//    }
-//    veryrecent[NB_VERYRECENT - 1] = d;
-//}
-//void memorized_track_debug() {
-//    dbgf("== memorized_track_count = %i", memorized_track_count);
-//    if (memorized_track_count) {
-//        memorized_track.track_debug();
-//    }
-//    dbg("==");
-//}
-// ==========
 
     // This one fills the array IH_timings
 
@@ -1170,15 +1115,13 @@ void loop() {
             ih_dbg_timing_pos = 0;
 #endif
 
-//        sleep_mode();
-        delay(1);
+        sleep_mode();
     }
     detachInterrupt(INT_RFINPUT);
 
 #ifdef TRACKSECTIONDEBUG
     dbgf("IH_max_pending_timings = %d", IH_max_pending_timings);
     track.track_debug_sections();
-//    memorized_track_debug();
 #endif
 
 #endif // SIMULATE
