@@ -33,13 +33,30 @@
 #include <Arduino.h>
 #include <avr/sleep.h>
 
+#ifdef TESTPLAN
+
+    // *WARNING*
+    //   DON'T UPDATE THE BELOW UNLESS YOU KNOW WHAT YOU ARE DOING!!!
+    //
+    // If you want to tune such defines, go to the [OK_TO_UPDATE] paragraph
+    // below.
+    // The test plan requires very specific defines to be set, hence this logic.
 #define SIMULATE
+#define TRACKDEBUG
+
+#else // TESTPLAN
+
+// [OK_TO_UPDATE]
+// It is OK to update the below, because if this code is compiled, then we are
+// not in the test plan.
+
+//#define SIMULATE
 //#define TRACE
 //#define REC_TIMINGS
-#define TRACKDEBUG
-//#define TRACKSECTIONDEBUG
+//#define TRACKDEBUG
+#define TRACKSECTIONDEBUG
 
-//#define DEBUG
+#endif // TESTPLAN
 
 #if defined(SIMULATE) || defined(TRACE) || defined(REC_TIMINGS) \
     || defined(TRACKDEBUG) || defined(TRACKSECTIONDEBUG)

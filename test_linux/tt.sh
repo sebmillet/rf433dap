@@ -7,9 +7,15 @@ PORT=/dev/ttyUSB0
 PASSED=0
 FAILED=0
 
-sleep 1
+    # The -t option will cause 'am' script to set TESTPLAN macro in source code,
+    # causing underlying defines to be set with appropriate values for the test
+    # plan to be executed.
+cd ..
+./am rf433decode.ino -u --stty -t
 
-cd track
+sleep 2
+
+cd test_linux/track
 
 for d in [0-9][0-9]; do
     inpfile=$(ls "${d}"/code-*)
