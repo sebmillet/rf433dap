@@ -7,29 +7,42 @@ PORT=/dev/ttyUSB0
 PASSED=0
 FAILED=0
 
-    # The -t option will cause 'am' script to set TESTPLAN macro in source code,
-    # causing underlying defines to be set with appropriate values for the test
-    # plan to be executed.
 cd ..
-./am rf433decode.ino -u --stty -t 1
 
-sleep 2
+START=1
+STOP=2
+if [ -n "${1:-}" ]; then
+    START="$1";
+    STOP="$1";
+fi
 
-cd test_linux/track
+for ((i=START; i<=STOP; i++)); do
 
-for d in [0-9][0-9]; do
-    inpfile=$(ls "${d}"/code-*)
-    tmpout="${d}"/tmpout.txt
-    expfile="${d}"/expect.txt
-    ./exectest.sh "${inpfile}" "${tmpout}" "${PORT}"
-    echo -n "${d}"
-    if cmp "${expfile}" "${tmpout}" > /dev/null; then
-        PASSED=$((PASSED + 1))
-        echo "    test ok"
-    else
-        FAILED=$((FAILED + 1))
-        echo " ** TEST KO, actual output differs from expected"
-    fi
+    echo "== ROUND $i"
+
+    ./am rf433decode.ino -u --stty -t $i
+
+    sleep 2
+
+    cd test_linux/track
+
+    for d in [0-9][0-9]; do
+        inpfile=$(ls "${d}"/code-*)
+        tmpout="${d}/tmpout${i}.txt"
+        expfile="${d}/expect${i}.txt"
+        ./exectest.sh "${inpfile}" "${tmpout}" "${PORT}"
+        echo -n "$i:${d}"
+        if cmp "${expfile}" "${tmpout}" > /dev/null; then
+            PASSED=$((PASSED + 1))
+            echo "    test ok"
+        else
+            FAILED=$((FAILED + 1))
+            echo " ** TEST KO, actual output differs from expected"
+        fi
+    done
+
+    cd ../..
+
 done
 
 echo "------"

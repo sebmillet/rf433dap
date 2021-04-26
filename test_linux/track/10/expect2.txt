@@ -1,0 +1,14 @@
+IH_max_pending_timings = 11
+[00] STS_SHORT_SEP, INITSEQ = 5656
+     SEP:  [ 2352,  3764,  7528]
+     LOW:  [1] n = 12, v = 00000000
+     HIGH: [1] n = 11, v = 00000000
+[01] STS_CONTINUED, INITSEQ = 5656
+     SEP:  [ 2352,  3764,  7528]
+     LOW:  [2] n = 32, v = d928f64f
+     HIGH: [2] n = 32, v = 26d709b0
+[02] STS_CONTINUED, INITSEQ = 5656
+     SEP:  [ 2352,  3764,  7528]
+     LOW:  [2] n = 32, v = 11319ffb
+     HIGH: [2] n = 32, v = eece6004
+IH_max_pending_timings = 11

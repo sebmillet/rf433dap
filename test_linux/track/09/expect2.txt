@@ -1,0 +1,38 @@
+IH_max_pending_timings = 11
+[00] STS_SHORT_SEP, INITSEQ = 8484
+     SEP:  [15017, 24028, 48056]
+     LOW:  [2] n = 13, v = 00000d1a
+     HIGH: [2] n = 12, v = 0000068d
+[01] STS_SHORT_SEP, INITSEQ = 8484
+     SEP:  [15017, 24028, 48056]
+     LOW:  [2] n = 13, v = 00000aaa
+     HIGH: [2] n = 12, v = 00000555
+[02] STS_SHORT_SEP, INITSEQ = 8484
+     SEP:  [15017, 24028, 48056]
+     LOW:  [2] n = 13, v = 00000aaa
+     HIGH: [2] n = 12, v = 00000555
+[03] STS_SHORT_SEP, INITSEQ = 8484
+     SEP:  [15017, 24028, 48056]
+     LOW:  [2] n = 13, v = 00000aaa
+     HIGH: [2] n = 12, v = 00000555
+[04] STS_SHORT_SEP, INITSEQ = 8484
+     SEP:  [15017, 24028, 48056]
+     LOW:  [2] n = 13, v = 00000aaa
+     HIGH: [2] n = 12, v = 00000555
+[05] STS_SHORT_SEP, INITSEQ = 8484
+     SEP:  [15017, 24028, 48056]
+     LOW:  [2] n = 13, v = 00000aaa
+     HIGH: [2] n = 12, v = 00000555
+[06] STS_SHORT_SEP, INITSEQ = 8484
+     SEP:  [15017, 24028, 48056]
+     LOW:  [2] n = 13, v = 00000aaa
+     HIGH: [2] n = 12, v = 00000555
+[07] STS_SHORT_SEP, INITSEQ = 8484
+     SEP:  [15017, 24028, 48056]
+     LOW:  [2] n = 13, v = 00000aaa
+     HIGH: [2] n = 12, v = 00000555
+[08] STS_SHORT_SEP, INITSEQ = 8484
+     SEP:  [15017, 24028, 48056]
+     LOW:  [2] n = 13, v = 00000aaa
+     HIGH: [2] n = 12, v = 00000555
+IH_max_pending_timings = 11

@@ -35,14 +35,13 @@
 
 #if TESTPLAN == 1
 
-    // *WARNING*
-    //   DON'T UPDATE THE BELOW UNLESS YOU KNOW WHAT YOU ARE DOING!!!
-    //
-    // If you want to tune such defines, go to the [OK_TO_UPDATE] paragraph
-    // below.
-    // The test plan requires very specific defines to be set, hence this logic.
 #define SIMULATE
 #define TRACKDEBUG
+
+#elif TESTPLAN == 2 // TESTPLAN
+
+#define SIMULATE
+#define TRACKSECTIONDEBUG
 
 #else // TESTPLAN
 
@@ -67,7 +66,8 @@
 #define DEBUG
 #endif
 
-#define MAX_DURATION 65535
+#define MAX_DURATION     65535
+#define MAX_SEP_DURATION 65534
 
 
 // * ********************** ***************************************************
@@ -332,8 +332,8 @@ inline bool Band::init_sep(uint16_t d) {
 
     uint32_t tmp = d;
     tmp <<= 1;
-    if (tmp > 65534)
-        tmp = 65534;
+    if (tmp > MAX_SEP_DURATION)
+        tmp = MAX_SEP_DURATION;
     sup = tmp;
     inf = d >> 1;
     inf += (inf >> 2);
@@ -607,11 +607,21 @@ typedef enum {
     STS_ERROR
 } section_term_status_t;
 
+typedef struct {
+    uint16_t inf;
+    uint16_t mid;
+    uint16_t sup;
+} boundaries_t;
+
 struct Section {
-    recorded_t rec_low;
-    byte nb_bits_low;
-    recorded_t rec_high;
-    byte nb_bits_high;
+    uint16_t initseq;
+    boundaries_t sep;
+    recorded_t low_rec;
+    byte low_bits;
+    byte low_bands;
+    recorded_t high_rec;
+    byte high_bits;
+    byte high_bands;
     section_term_status_t sts;
 };
 
@@ -645,12 +655,7 @@ class Track {
 
         byte prev_r;
 
-        uint16_t low_short;
-        uint16_t low_long;
-        uint16_t high_short;
-        uint16_t high_long;
-        uint16_t sep;
-
+        uint16_t initseq;
         byte nb_sections;
         Section sections[12];
 
@@ -667,7 +672,6 @@ class Track {
 #endif
 
         trk_t get_trk() const { return trk; }
-        bool rails_have_2_bands() const;
 };
 
 Track::Track() {
@@ -690,6 +694,7 @@ inline void Track::track_eat(byte r, uint16_t d) {
             r_low.reset();
             r_high.reset();
             prev_r = r;
+            initseq = d;
             trk = TRK_RECV;
         }
         return;
@@ -836,10 +841,16 @@ Notations:
         if (record_current_section) {
             Section *psec = &sections[nb_sections++];
             psec->sts = sts;
-            psec->rec_low = r_low.rec;
-            psec->nb_bits_low = r_low.index;
-            psec->rec_high = r_high.rec;
-            psec->nb_bits_high = r_high.index;
+            psec->initseq = initseq;
+            psec->sep.inf = r_high.b_sep.inf;
+            psec->sep.mid = r_high.b_sep.mid;
+            psec->sep.sup = r_high.b_sep.sup;
+            psec->low_rec = r_low.rec;
+            psec->low_bits = r_low.index;
+            psec->low_bands = r_low.get_band_count();
+            psec->high_rec = r_high.rec;
+            psec->high_bits = r_high.index;
+            psec->high_bands = r_high.get_band_count();
             trk = ((nb_sections == sizeof(sections) / sizeof(*sections)) ?
                    TRK_DATA : TRK_RECV);
 
@@ -883,38 +894,29 @@ void Track::track_debug() const {
 #endif
 
 #ifdef TRACKSECTIONDEBUG
+const char *sts_names[] = {
+    "STS_CONTINUED",
+    "STS_SHORT_SEP",
+    "STS_LONG_SEP",
+    "STS_SEP_SEP",
+    "STS_ERROR"
+};
 void Track::track_debug_sections() const {
 #ifdef TRACE
     dbgf("S> nbsec=%i", nb_sections);
 #endif
     for (byte i = 0; i < nb_sections; ++i) {
         const Section *psec = &sections[i];
-        dbgf("[%02d] %s", i,
-                (psec->sts == STS_CONTINUED ? "CONT" :
-                    (psec->sts == STS_SHORT_SEP ? "SSEP" :
-                        (psec->sts == STS_LONG_SEP ? "LSEP" :
-                            (psec->sts == STS_SEP_SEP ? "2SEP" :
-                                (psec->sts == STS_ERROR ? "ERROR" :
-                                    "(UNK)"))))));
-        dbgf("     low:  n = %d, v = " FMTRECORDEDT "",
-                      psec->nb_bits_low, psec->rec_low);
-        dbgf("     high: n = %d, v = " FMTRECORDEDT "",
-                      psec->nb_bits_high, psec->rec_high);
+        dbgf("[%02d] %s, INITSEQ = %u", i, sts_names[psec->sts], psec->initseq);
+        dbgf("     SEP:  [%5u, %5u, %5u]",
+                psec->sep.inf, psec->sep.mid, psec->sep.sup);
+        dbgf("     LOW:  [%d] n = %d, v = " FMTRECORDEDT "",
+                      psec->low_bands, psec->low_bits, psec->low_rec);
+        dbgf("     HIGH: [%d] n = %d, v = " FMTRECORDEDT "",
+                      psec->high_bands, psec->high_bits, psec->high_rec);
     }
 }
 #endif
-
-    // Returns true if both rails have 2 bands, meaning, the signal received
-    // showed both short and long signal durations.
-    // If one rail has one band, that means we don't know if signal on this band
-    // is 'short' or 'long' (= the duration was constant).
-    // This can be important to know, because if the function returns false, the
-    // caller should NOT consider the signal received contains information (this
-    // most likely corresponds to a sync prefix before real information
-    // encoding).
-bool Track::rails_have_2_bands() const {
-    return r_low.get_band_count() == 2 && r_high.get_band_count() == 2;
-}
 
 
 // * ************* ************************************************************

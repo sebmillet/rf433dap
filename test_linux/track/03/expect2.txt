@@ -1,0 +1,6 @@
+IH_max_pending_timings = 7
+[00] STS_SEP_SEP, INITSEQ = 65000
+     SEP:  [ 2417,  3868,  7736]
+     LOW:  [2] n = 8, v = 00000002
+     HIGH: [1] n = 8, v = 00000000
+IH_max_pending_timings = 7

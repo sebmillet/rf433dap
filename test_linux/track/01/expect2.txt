@@ -1,0 +1,9 @@
+IH_max_pending_timings = 6
+[00] STS_CONTINUED, INITSEQ = 9604
+     SEP:  [    0,     0,     0]
+     LOW:  [2] n = 32, v = b6956d00
+     HIGH: [2] n = 32, v = 496a92ff
+[01] STS_SHORT_SEP, INITSEQ = 9604
+     SEP:  [ 4387,  7020, 14040]
+     LOW:  [2] n = 1, v = 00000000
+     HIGH: [2] n = 0, v = 00000000
