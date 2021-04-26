@@ -11,7 +11,7 @@ FAILED=0
     # causing underlying defines to be set with appropriate values for the test
     # plan to be executed.
 cd ..
-./am rf433decode.ino -u --stty -t
+./am rf433decode.ino -u --stty -t 1
 
 sleep 2
 

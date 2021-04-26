@@ -3,7 +3,7 @@
     "N":30,"start":0,"end":29,
     "trk":TRK_RECV,"xorval":0x00000000,
     "r_low":{
-      "bits":8,"v":0x00000000,"railstatus":"closed","n":1,
+      "bits":9,"v":0x00000000,"railstatus":"closed","n":1,
       "b_short":{"inf":186,"mid":248,"sup":310},
       "b_long":{"inf":186,"mid":248,"sup":310},
       "b_sep":{"inf":0,"mid":0,"sup":0}

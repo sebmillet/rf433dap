@@ -14,10 +14,12 @@
 # 1.3  Output from Arduino is recorded in files named with numbers instead of
 #      date-time string.
 # 1.4  Adds -t (--testplan) option, to set TESTPLAN macro
+# 1.5  -t (or --testplan) now comes with a value, so as to manage multiple test
+#      plans.
 
 set -euo pipefail
 
-VERSION=1.4
+VERSION=1.5
 
 PORT=
 BOARD=
@@ -34,7 +36,7 @@ CATUSB="no"
 STTY="no"
 RECORDUSB="no"
 COMPILE="yes"
-TESTPLAN="no"
+TESTPLAN=
 
 DISPLAYSEP=no
 
@@ -80,7 +82,8 @@ function usage {
     echo "                  fails, it'll fallback to 9600."
     echo "                  This option is useful only if USB is read"
     echo "                  (-c or --stty option set)"
-    echo "  -t --testplan   Compile with TESTPLAN set (as if #define TESTPLAN)"
+    echo "  -t --testplan   Set TESTPLAN macro value"
+    echo "                  (as if #define TESTPLAN VALUE)"
     exit 1
 }
 
@@ -89,7 +92,7 @@ function version {
     exit
 }
 
-OPTS=$(getopt -o hVvub:p:s:B:d:crnt --long help,version,verbose,upload,board:,port:,speed:,fqbn:,builddir:,catusb,stty,recordusb,nocompile,readspeed:,recordfile:,testplan -n 'am' -- "$@")
+OPTS=$(getopt -o hVvub:p:s:B:d:crnt: --long help,version,verbose,upload,board:,port:,speed:,fqbn:,builddir:,catusb,stty,recordusb,nocompile,readspeed:,recordfile:,testplan: -n 'am' -- "$@")
 
 eval set -- "$OPTS"
 
@@ -110,7 +113,7 @@ while true; do
          --readspeed )  READSPEED="$2"; shift 2 ;;
          --recordfile ) RECORDFILE="$2"; shift 2 ;;
          --stty )       STTY="yes"; shift ;;
-    -t | --testplan )   TESTPLAN="yes"; shift ;;
+    -t | --testplan )   TESTPLAN="$2"; shift 2 ;;
     -- ) shift; break ;;
     * ) break ;;
   esac
@@ -272,8 +275,8 @@ if [ "${COMPILE}" == "yes" ]; then
     fi
 
     TESTPLAN_OPT=""
-    if [ "${TESTPLAN}" == "yes" ]; then
-        TESTPLAN_OPT="-prefs=build.extra_flags=-DTESTPLAN"
+    if [ -n "${TESTPLAN}" ]; then
+        TESTPLAN_OPT="-prefs=build.extra_flags=-DTESTPLAN=${TESTPLAN}"
     fi
 
     # shellcheck disable=SC2086

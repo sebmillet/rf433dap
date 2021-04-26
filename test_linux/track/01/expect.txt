@@ -19,7 +19,7 @@
     "N":70,"start":0,"end":69,
     "trk":TRK_RECV,"xorval":0x00000000,
     "r_low":{
-      "bits":0,"v":0x00000000,"railstatus":"closed","n":2,
+      "bits":1,"v":0x00000000,"railstatus":"closed","n":2,
       "b_short":{"inf":201,"mid":536,"sup":670},
       "b_long":{"inf":753,"mid":1236,"sup":2008},
       "b_sep":{"inf":0,"mid":0,"sup":0}

@@ -1,9 +1,9 @@
 [
   {
     "N":112,"start":0,"end":59,
-    "trk":TRK_RECV,"xorval":0x00c012ec,
+    "trk":TRK_RECV,"xorval":0x00001407,
     "r_low":{
-      "bits":25,"v":0x00400259,"railstatus":"closed","n":2,
+      "bits":26,"v":0x008004b2,"railstatus":"closed","n":2,
       "b_short":{"inf":488,"mid":1300,"sup":1625},
       "b_long":{"inf":1828,"mid":2540,"sup":4127},
       "b_sep":{"inf":0,"mid":0,"sup":0}
@@ -17,9 +17,9 @@
   }
   {
     "N":112,"start":0,"end":111,
-    "trk":TRK_RECV,"xorval":0x018012ec,
+    "trk":TRK_RECV,"xorval":0x00001407,
     "r_low":{
-      "bits":26,"v":0x00800259,"railstatus":"closed","n":2,
+      "bits":27,"v":0x010004b2,"railstatus":"closed","n":2,
       "b_short":{"inf":488,"mid":1300,"sup":1625},
       "b_long":{"inf":1828,"mid":2540,"sup":4127},
       "b_sep":{"inf":0,"mid":0,"sup":0}

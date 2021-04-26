@@ -33,7 +33,7 @@
 #include <Arduino.h>
 #include <avr/sleep.h>
 
-#ifdef TESTPLAN
+#if TESTPLAN == 1
 
     // *WARNING*
     //   DON'T UPDATE THE BELOW UNLESS YOU KNOW WHAT YOU ARE DOING!!!
@@ -45,6 +45,10 @@
 #define TRACKDEBUG
 
 #else // TESTPLAN
+
+#ifdef TESTPLAN
+#error "TESTPLAN macro has an illegal value."
+#endif
 
 // [OK_TO_UPDATE]
 // It is OK to update the below, because if this code is compiled, then we are
@@ -296,10 +300,8 @@ struct Band {
 };
 
 inline void Band::reset() {
-#ifdef SIMULATE
     inf = 0;
     sup = 0;
-#endif
     mid = 0;
 }
 
@@ -712,26 +714,26 @@ inline void Track::track_eat(byte r, uint16_t d) {
         dbgf("T> b = %d", b);
 #endif
 
-        if (r_low.index >= 1 || r_high.index >= 1) {
-            byte li = r_low.index;
-            byte hi = r_high.index;
-            Rail *prail = nullptr;
-            if (r_low.index > r_high.index) {
-                prail = &r_low;
-            } else if (r_high.index > r_low.index) {
-                prail = &r_high;
-            }
-            if (prail) {
-                prail->rec >>= 1;
-                prail->index--;
-            }
-            if (r_high.index != r_low.index) {
-                dbgf("(prev) li = %i, hi = %i", li, hi);
-                dbgf("r_low.index = %i, r_high.index = %i",
-                     r_low.index, r_high.index);
-            }
-            assert(r_high.index == r_low.index);
-        }
+//        if (r_low.index >= 1 || r_high.index >= 1) {
+//            byte li = r_low.index;
+//            byte hi = r_high.index;
+//            Rail *prail = nullptr;
+//            if (r_low.index > r_high.index) {
+//                prail = &r_low;
+//            } else if (r_high.index > r_low.index) {
+//                prail = &r_high;
+//            }
+//            if (prail) {
+//                prail->rec >>= 1;
+//                prail->index--;
+//            }
+//            if (r_high.index != r_low.index) {
+//                dbgf("(prev) li = %i, hi = %i", li, hi);
+//                dbgf("r_low.index = %i, r_high.index = %i",
+//                     r_low.index, r_high.index);
+//            }
+//            assert(r_high.index == r_low.index);
+//        }
 
         if (r_low.status == RAIL_OPEN)
             r_low.status = RAIL_CLOSED;
