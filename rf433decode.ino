@@ -69,6 +69,8 @@
 #define MAX_DURATION     65535
 #define MAX_SEP_DURATION 65534
 
+#define MAX_SECTIONS 12
+
 
 // * ********************** ***************************************************
 // * Read input from serial ***************************************************
@@ -294,12 +296,12 @@ struct Band {
     bool test_value_init_if_needed(uint16_t d);
     bool test_value(uint16_t d);
 
-    void reset();
+    void breset();
     bool init(uint16_t d);
     bool init_sep(uint16_t d);
 };
 
-inline void Band::reset() {
+inline void Band::breset() {
     inf = 0;
     sup = 0;
     mid = 0;
@@ -406,8 +408,8 @@ class Rail {
     public:
         Rail();
         bool rail_eat(uint16_t d);
-        void reset();
-        void reset_soft();
+        void rreset();
+        void rreset_soft();
 #ifdef TRACKDEBUG
         void rail_debug() const;
 #endif
@@ -415,18 +417,18 @@ class Rail {
 };
 
 Rail::Rail() {
-    reset();
+    rreset();
 }
 
-inline void Rail::reset() {
-    reset_soft();
+inline void Rail::rreset() {
+    rreset_soft();
 
-    b_short.reset();
-    b_long.reset();
-    b_sep.reset();
+    b_short.breset();
+    b_long.breset();
+    b_sep.breset();
 }
 
-inline void Rail::reset_soft() {
+inline void Rail::rreset_soft() {
     status = RAIL_OPEN;
     index = 0;
     rec = 0;
@@ -607,22 +609,22 @@ typedef enum {
     STS_ERROR
 } section_term_status_t;
 
-typedef struct {
-    uint16_t inf;
-    uint16_t mid;
-    uint16_t sup;
-} boundaries_t;
-
 struct Section {
-    uint16_t initseq;
-    boundaries_t sep;
+//    uint16_t initseq;
     recorded_t low_rec;
-    byte low_bits;
-    byte low_bands;
+    unsigned char low_bits   :6;
+    unsigned char low_bands  :2;
     recorded_t high_rec;
-    byte high_bits;
-    byte high_bands;
+    unsigned char high_bits  :6;
+    unsigned char high_bands :2;
+    uint16_t sep;
     section_term_status_t sts;
+};
+
+struct RawCode {
+    uint16_t initseq;
+    byte nb_sections;
+    Section sections[MAX_SECTIONS];
 };
 
 
@@ -652,17 +654,14 @@ class Track {
         volatile trk_t trk;
         Rail r_low;
         Rail r_high;
-
         byte prev_r;
 
-        uint16_t initseq;
-        byte nb_sections;
-        Section sections[12];
+        RawCode rawcode;
 
     public:
         Track();
 
-        void treset_hard();
+        void treset();
         void track_eat(byte r, uint16_t d);
 #ifdef TRACKDEBUG
         void track_debug() const;
@@ -675,12 +674,13 @@ class Track {
 };
 
 Track::Track() {
-    treset_hard();
+    treset();
 }
 
-inline void Track::treset_hard() {
+inline void Track::treset() {
     trk = TRK_WAIT;
-    nb_sections = 0;
+    rawcode.nb_sections = 0;
+    rawcode.initseq = 0;
 }
 
 inline void Track::track_eat(byte r, uint16_t d) {
@@ -691,10 +691,10 @@ inline void Track::track_eat(byte r, uint16_t d) {
 
     if (trk == TRK_WAIT) {
         if (r == 1 && d >= TRACK_MIN_INITSEQ_DURATION) {
-            r_low.reset();
-            r_high.reset();
+            r_low.rreset();
+            r_high.rreset();
             prev_r = r;
-            initseq = d;
+            rawcode.initseq = d;
             trk = TRK_RECV;
         }
         return;
@@ -809,8 +809,9 @@ Notations:
         if (r_low.index < TRACK_MIN_BITS || r_high.index < TRACK_MIN_BITS) {
             record_current_section =
                 (sts != STS_ERROR
-                 && nb_sections
-                 && sections[nb_sections - 1].sts == STS_CONTINUED);
+                 && rawcode.nb_sections
+                 && rawcode.sections[rawcode.nb_sections - 1].sts
+                    == STS_CONTINUED);
 
 #ifdef TRACKDEBUG
             do_track_debug = record_current_section;
@@ -839,30 +840,26 @@ Notations:
 #endif
 
         if (record_current_section) {
-            Section *psec = &sections[nb_sections++];
+            Section *psec = &rawcode.sections[rawcode.nb_sections++];
             psec->sts = sts;
-            psec->initseq = initseq;
-            psec->sep.inf = r_high.b_sep.inf;
-            psec->sep.mid = r_high.b_sep.mid;
-            psec->sep.sup = r_high.b_sep.sup;
+            psec->sep = r_high.b_sep.mid;
             psec->low_rec = r_low.rec;
             psec->low_bits = r_low.index;
             psec->low_bands = r_low.get_band_count();
             psec->high_rec = r_high.rec;
             psec->high_bits = r_high.index;
             psec->high_bands = r_high.get_band_count();
-            trk = ((nb_sections == sizeof(sections) / sizeof(*sections)) ?
-                   TRK_DATA : TRK_RECV);
+            trk = ((rawcode.nb_sections == MAX_SECTIONS) ? TRK_DATA : TRK_RECV);
 
             if (trk == TRK_RECV) {
-                r_low.reset_soft();
-                r_high.reset_soft();
+                r_low.rreset_soft();
+                r_high.rreset_soft();
             }
         } else {
-            if (nb_sections) {
+            if (rawcode.nb_sections) {
                 trk = TRK_DATA;
             } else {
-                treset_hard();
+                treset();
                     // WARNING
                     //   Re-entrant call... not ideal.
                 track_eat(r, d);
@@ -902,17 +899,15 @@ const char *sts_names[] = {
     "STS_ERROR"
 };
 void Track::track_debug_sections() const {
-#ifdef TRACE
-    dbgf("S> nbsec=%i", nb_sections);
-#endif
-    for (byte i = 0; i < nb_sections; ++i) {
-        const Section *psec = &sections[i];
-        dbgf("[%02d] %s, INITSEQ = %u", i, sts_names[psec->sts], psec->initseq);
-        dbgf("     SEP:  [%5u, %5u, %5u]",
-                psec->sep.inf, psec->sep.mid, psec->sep.sup);
-        dbgf("     LOW:  [%d] n = %d, v = " FMTRECORDEDT "",
+    dbgf("> nb_sections = %d, initseq = %u",
+            rawcode.nb_sections, rawcode.initseq);
+    for (byte i = 0; i < rawcode.nb_sections; ++i) {
+        const Section *psec = &rawcode.sections[i];
+        dbgf("  %02d  %s", i, sts_names[psec->sts]);
+        dbgf("      sep = %u", psec->sep);
+        dbgf("      low:  [%d] n = %2d, v = 0x" FMTRECORDEDT "",
                       psec->low_bands, psec->low_bits, psec->low_rec);
-        dbgf("     HIGH: [%d] n = %d, v = " FMTRECORDEDT "",
+        dbgf("      high: [%d] n = %2d, v = 0x" FMTRECORDEDT "",
                       psec->high_bands, psec->high_bits, psec->high_rec);
     }
 }
@@ -1095,7 +1090,7 @@ void loop() {
 
     ++counter;
 
-    track.treset_hard();
+    track.treset();
     sim_int_count_svg = sim_int_count;
     while (track.get_trk() != TRK_DATA && sim_int_count < sim_timings_count) {
         for (int i = 0; i < 6; ++i)
@@ -1124,7 +1119,7 @@ void loop() {
 #else // SIMULATE
 
     dbg("Waiting for signal");
-    track.treset_hard();
+    track.treset();
 
     attachInterrupt(INT_RFINPUT, &handle_interrupt, CHANGE);
     while (track.get_trk() != TRK_DATA) {

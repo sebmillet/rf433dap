@@ -1,5 +1,6 @@
 IH_max_pending_timings = 7
-[00] STS_SHORT_SEP, INITSEQ = 9464
-     SEP:  [ 2417,  3868,  7736]
-     LOW:  [1] n = 9, v = 00000000
-     HIGH: [1] n = 8, v = 00000000
+> nb_sections = 1, initseq = 9464
+  00  STS_SHORT_SEP
+      sep = 3868
+      low:  [1] n =  9, v = 0x00000000
+      high: [1] n =  8, v = 0x00000000

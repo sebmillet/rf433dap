@@ -1,9 +1,10 @@
 IH_max_pending_timings = 11
-[00] STS_SHORT_SEP, INITSEQ = 5288
-     SEP:  [ 3315,  5304, 10608]
-     LOW:  [2] n = 26, v = 008004b2
-     HIGH: [2] n = 25, v = 008010b5
-[01] STS_SHORT_SEP, INITSEQ = 5288
-     SEP:  [ 3315,  5304, 10608]
-     LOW:  [2] n = 27, v = 010004b2
-     HIGH: [2] n = 26, v = 010010b5
+> nb_sections = 2, initseq = 5288
+  00  STS_SHORT_SEP
+      sep = 5304
+      low:  [2] n = 26, v = 0x008004b2
+      high: [2] n = 25, v = 0x008010b5
+  01  STS_SHORT_SEP
+      sep = 5304
+      low:  [2] n = 27, v = 0x010004b2
+      high: [2] n = 26, v = 0x010010b5
