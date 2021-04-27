@@ -41,7 +41,7 @@
 #elif TESTPLAN == 2 // TESTPLAN
 
 #define SIMULATE
-#define TRACKSECTIONDEBUG
+#define RAWCODE_SECTIONS_DEBUG
 
 #else // TESTPLAN
 
@@ -53,16 +53,18 @@
 // It is OK to update the below, because if this code is compiled, then we are
 // not in the test plan.
 
-//#define SIMULATE
+#define SIMULATE
 //#define TRACE
 //#define REC_TIMINGS
 //#define TRACKDEBUG
-#define TRACKSECTIONDEBUG
+#define RAWCODE_SECTIONS_DEBUG
+#define DEBUG_DECODE
+#define SMALL_RECORDED_T
 
 #endif // TESTPLAN
 
 #if defined(SIMULATE) || defined(TRACE) || defined(REC_TIMINGS) \
-    || defined(TRACKDEBUG) || defined(TRACKSECTIONDEBUG)
+    || defined(TRACKDEBUG) || defined(RAWCODE_SECTIONS_DEBUG)
 #define DEBUG
 #endif
 
@@ -383,10 +385,17 @@ inline bool Band::test_value(uint16_t d) {
 // * Rail *********************************************************************
 // * **** *********************************************************************
 
+#ifdef SMALL_RECORDED_T
+
+typedef uint8_t recorded_t;
+#define FMTRECORDEDT "%02x"
+
+#else // SMALL_RECORDED_T
+
 typedef uint32_t recorded_t;
 #define FMTRECORDEDT "%08lx"
-//typedef uint8_t recorded_t;
-//#define FMTRECORDEDT "%02x"
+
+#endif // SMALL_RECORDED_T
 
 #define RAIL_OPEN     0
 #define RAIL_FULL     1
@@ -625,7 +634,32 @@ struct RawCode {
     uint16_t initseq;
     byte nb_sections;
     Section sections[MAX_SECTIONS];
+
+    void debug_rawcode() const;
 };
+
+#ifdef RAWCODE_SECTIONS_DEBUG
+const char *sts_names[] = {
+    "STS_CONTINUED",
+    "STS_SHORT_SEP",
+    "STS_LONG_SEP",
+    "STS_SEP_SEP",
+    "STS_ERROR"
+};
+void RawCode::debug_rawcode() const {
+    dbgf("> nb_sections = %d, initseq = %u",
+            nb_sections, initseq);
+    for (byte i = 0; i < nb_sections; ++i) {
+        const Section *psec = &sections[i];
+        dbgf("  %02d  %s", i, sts_names[psec->sts]);
+        dbgf("      sep = %u", psec->sep);
+        dbgf("      low:  [%d] n = %2d, v = 0x" FMTRECORDEDT "",
+                      psec->low_bands, psec->low_bits, psec->low_rec);
+        dbgf("      high: [%d] n = %2d, v = 0x" FMTRECORDEDT "",
+                      psec->high_bands, psec->high_bits, psec->high_rec);
+    }
+}
+#endif
 
 
 // * ***** ********************************************************************
@@ -666,11 +700,9 @@ class Track {
 #ifdef TRACKDEBUG
         void track_debug() const;
 #endif
-#ifdef TRACKSECTIONDEBUG
-        void track_debug_sections() const;
-#endif
 
         trk_t get_trk() const { return trk; }
+        const RawCode *get_rawcode() const { return &rawcode; }
 };
 
 Track::Track() {
@@ -890,29 +922,6 @@ void Track::track_debug() const {
 }
 #endif
 
-#ifdef TRACKSECTIONDEBUG
-const char *sts_names[] = {
-    "STS_CONTINUED",
-    "STS_SHORT_SEP",
-    "STS_LONG_SEP",
-    "STS_SEP_SEP",
-    "STS_ERROR"
-};
-void Track::track_debug_sections() const {
-    dbgf("> nb_sections = %d, initseq = %u",
-            rawcode.nb_sections, rawcode.initseq);
-    for (byte i = 0; i < rawcode.nb_sections; ++i) {
-        const Section *psec = &rawcode.sections[i];
-        dbgf("  %02d  %s", i, sts_names[psec->sts]);
-        dbgf("      sep = %u", psec->sep);
-        dbgf("      low:  [%d] n = %2d, v = 0x" FMTRECORDEDT "",
-                      psec->low_bands, psec->low_bits, psec->low_rec);
-        dbgf("      high: [%d] n = %2d, v = 0x" FMTRECORDEDT "",
-                      psec->high_bands, psec->high_bits, psec->high_rec);
-    }
-}
-#endif
-
 
 // * ************* ************************************************************
 // * Interruptions ************************************************************
@@ -1071,6 +1080,58 @@ void setup() {
 
 Track track;
 
+typedef enum {
+    CODE_NONE,
+    CODE_UNDETERMINED,
+    CODE_SYNC,
+    CODE_TRIBIT
+} code_t;
+
+#ifdef DEBUG_DECODE
+const char *code_names[] = {
+    "CODE_NONE",
+    "CODE_UNDETERMINED",
+    "CODE_SYNC",
+    "CODE_TRIBIT"
+};
+#endif
+void decode_rawcode(const RawCode *raw) {
+    code_t code;
+    for (byte i = 0; i < raw->nb_sections; ++i) {
+        code = CODE_NONE;
+        const Section *psec = &raw->sections[i];
+        if (psec->low_bands == 1 && psec->high_bands == 1) {
+            code = CODE_SYNC;
+        } else if (psec->low_bands == 1 || psec->high_bands == 1) {
+            code = CODE_UNDETERMINED;
+        } else {
+            recorded_t low_rec = psec->low_rec;
+            recorded_t high_rec = psec->high_rec;
+            bool check_tribit_code = false;
+            if ((psec->low_bits >= 1 && psec->high_bits >= 1)
+                && abs(psec->low_bits - psec->high_bits) <= 1) {
+                check_tribit_code = true;
+                recorded_t *prec = nullptr;
+                if (psec->low_bits > psec->high_bits) {
+                    prec = &low_rec;
+                } else if (psec->high_bits > psec->low_bits) {
+                    prec = &high_rec;
+                }
+                if (prec)
+                    *prec >>= 1;
+            }
+            if (check_tribit_code) {
+                recorded_t comp = (1 << psec->low_bits) - 1;
+                if ((low_rec ^ high_rec) == comp)
+                    code = CODE_TRIBIT;
+            }
+        }
+#ifdef DEBUG_DECODE
+        dbgf("%02d  %s", i, code_names[code]);
+#endif
+    }
+}
+
 void loop() {
 
 //    initialize_veryrecent();
@@ -1098,7 +1159,7 @@ void loop() {
         while (track.get_trk() != TRK_DATA && process_interrupt_timing(&track)) {
         }
     }
-#ifdef TRACKSECTIONDEBUG
+#ifdef RAWCODE_SECTIONS_DEBUG
     dbgf("IH_max_pending_timings = %d", IH_max_pending_timings);
 #endif
 
@@ -1108,8 +1169,10 @@ void loop() {
     }
 #endif
 
-#ifdef TRACKSECTIONDEBUG
-    track.track_debug_sections();
+#ifdef RAWCODE_SECTIONS_DEBUG
+    const RawCode *praw = track.get_rawcode();
+    praw->debug_rawcode();
+    decode_rawcode(praw);
 #endif
 
     if (sim_int_count >= sim_timings_count) {
@@ -1135,9 +1198,11 @@ void loop() {
     }
     detachInterrupt(INT_RFINPUT);
 
-#ifdef TRACKSECTIONDEBUG
+#ifdef RAWCODE_SECTIONS_DEBUG
     dbgf("IH_max_pending_timings = %d", IH_max_pending_timings);
-    track.track_debug_sections();
+    RawCode *praw = track.get_rawcode();
+    praw->debug_rawcode();
+    decode_rawcode(praw);
 #endif
 
 #endif // SIMULATE
