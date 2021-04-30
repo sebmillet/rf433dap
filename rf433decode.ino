@@ -36,7 +36,7 @@
 #if TESTPLAN == 1
 
 #define SIMULATE
-#define TRACKDEBUG
+#define TRACK_DEBUG
 
 #elif TESTPLAN == 2 // TESTPLAN
 
@@ -56,15 +56,15 @@
 #define SIMULATE
 //#define TRACE
 //#define REC_TIMINGS
-//#define TRACKDEBUG
+//#define TRACK_DEBUG
 #define RAWCODE_SECTIONS_DEBUG
 #define DEBUG_DECODE
-#define SMALL_RECORDED_T
+//#define SMALL_RECORDED_T
 
 #endif // TESTPLAN
 
 #if defined(SIMULATE) || defined(TRACE) || defined(REC_TIMINGS) \
-    || defined(TRACKDEBUG) || defined(RAWCODE_SECTIONS_DEBUG)
+    || defined(TRACK_DEBUG) || defined(RAWCODE_SECTIONS_DEBUG)
 #define DEBUG
 #endif
 
@@ -419,7 +419,7 @@ class Rail {
         bool rail_eat(uint16_t d);
         void rreset();
         void rreset_soft();
-#ifdef TRACKDEBUG
+#ifdef TRACK_DEBUG
         void rail_debug() const;
 #endif
         byte get_band_count() const;
@@ -577,7 +577,7 @@ inline bool Rail::rail_eat(uint16_t d) {
     return (status == RAIL_OPEN);
 }
 
-#ifdef TRACKDEBUG
+#ifdef TRACK_DEBUG
 const char* status_names[] = {
     "open",
     "full",
@@ -697,7 +697,7 @@ class Track {
 
         void treset();
         void track_eat(byte r, uint16_t d);
-#ifdef TRACKDEBUG
+#ifdef TRACK_DEBUG
         void track_debug() const;
 #endif
 
@@ -833,7 +833,7 @@ Notations:
 
         bool record_current_section;
 
-#ifdef TRACKDEBUG
+#ifdef TRACK_DEBUG
         bool do_track_debug = false;
         (void)do_track_debug;
 #endif
@@ -845,20 +845,20 @@ Notations:
                  && rawcode.sections[rawcode.nb_sections - 1].sts
                     == STS_CONTINUED);
 
-#ifdef TRACKDEBUG
+#ifdef TRACK_DEBUG
             do_track_debug = record_current_section;
 #endif
 
         } else {
             record_current_section = (sts != STS_ERROR);
 
-#ifdef TRACKDEBUG
+#ifdef TRACK_DEBUG
             do_track_debug = true;
 #endif
 
         }
 
-#if defined(SIMULATE) && defined(TRACKDEBUG)
+#if defined(SIMULATE) && defined(TRACK_DEBUG)
 #ifdef TRACE
         dbgf("T> reccursec=%i, sts=%i", record_current_section, sts);
 #endif
@@ -874,7 +874,9 @@ Notations:
         if (record_current_section) {
             Section *psec = &rawcode.sections[rawcode.nb_sections++];
             psec->sts = sts;
-            psec->sep = r_high.b_sep.mid;
+            psec->sep = (sts == STS_SHORT_SEP
+                        || sts == STS_LONG_SEP
+                        || sts == STS_SEP_SEP ? d : 0);
             psec->low_rec = r_low.rec;
             psec->low_bits = r_low.index;
             psec->low_bands = r_low.get_band_count();
@@ -901,7 +903,7 @@ Notations:
     }
 }
 
-#ifdef TRACKDEBUG
+#ifdef TRACK_DEBUG
 const char* trk_names[] = {
     "TRK_WAIT",
     "TRK_RECV",
@@ -977,11 +979,16 @@ void handle_interrupt() {
         d = MAX_DURATION;
 
     unsigned char next_IH_write_head = (IH_write_head + 1) & IH_MASK;
-    if (next_IH_write_head != IH_read_head) {
-        IH_write_head = next_IH_write_head;
-        IH_timings[IH_write_head].r = r;
-        IH_timings[IH_write_head].d = d;
+        // No ideal solution here: we reached the buffer size, so either we
+        // write nothing, or, we loose the oldest entry that was the next one to
+        // read.
+        // Solution here: we loose oldest entry in buffer and do the write.
+    if (next_IH_write_head == IH_read_head) {
+        IH_read_head = (IH_read_head + 1) & IH_MASK;
     }
+    IH_write_head = next_IH_write_head;
+    IH_timings[IH_write_head].r = r;
+    IH_timings[IH_write_head].d = d;
 }
 // END OF CRITICAL SECTION !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
@@ -1084,7 +1091,8 @@ typedef enum {
     CODE_NONE,
     CODE_UNDETERMINED,
     CODE_SYNC,
-    CODE_TRIBIT
+    CODE_TRIBIT,
+    CODE_TRIBIT_INV
 } code_t;
 
 #ifdef DEBUG_DECODE
@@ -1092,7 +1100,8 @@ const char *code_names[] = {
     "CODE_NONE",
     "CODE_UNDETERMINED",
     "CODE_SYNC",
-    "CODE_TRIBIT"
+    "CODE_TRIBIT",
+    "CODE_TRIBIT_INV"
 };
 #endif
 void decode_rawcode(const RawCode *raw) {
@@ -1100,16 +1109,26 @@ void decode_rawcode(const RawCode *raw) {
     for (byte i = 0; i < raw->nb_sections; ++i) {
         code = CODE_NONE;
         const Section *psec = &raw->sections[i];
-        if (psec->low_bands == 1 && psec->high_bands == 1) {
+
+        if (abs(psec->low_bits - psec->high_bits) >= 2) {
+                // Defensive programming (should never happen).
+                // It should never happen because we continually check that 'r'
+                // submitted values (as argument to track_eat()) switch between
+                // 0 and 1, so that low and high rails are populated equally.
+            code = CODE_UNDETERMINED;
+        } else if (psec->low_bands == 1 && psec->high_bands == 1) {
             code = CODE_SYNC;
         } else if (psec->low_bands == 1 || psec->high_bands == 1) {
             code = CODE_UNDETERMINED;
         } else {
+
+            bool is_tribit = false;
+            bool is_tribit_inv = false;
+
             recorded_t low_rec = psec->low_rec;
             recorded_t high_rec = psec->high_rec;
             bool check_tribit_code = false;
-            if ((psec->low_bits >= 1 && psec->high_bits >= 1)
-                && abs(psec->low_bits - psec->high_bits) <= 1) {
+            if (psec->low_bits >= 1 && psec->high_bits >= 1) {
                 check_tribit_code = true;
                 recorded_t *prec = nullptr;
                 if (psec->low_bits > psec->high_bits) {
@@ -1121,11 +1140,43 @@ void decode_rawcode(const RawCode *raw) {
                     *prec >>= 1;
             }
             if (check_tribit_code) {
-                recorded_t comp = (1 << psec->low_bits) - 1;
+                byte n = min(psec->low_bits, psec->high_bits);
+                recorded_t comp = ((recorded_t)1 << n) - 1;
                 if ((low_rec ^ high_rec) == comp)
-                    code = CODE_TRIBIT;
+                    is_tribit = true;
             }
+            if (code == CODE_NONE && psec->high_bits >= 1
+                        && psec->low_bits >= psec->high_bits) {
+                recorded_t low_rec = psec->low_rec;
+                recorded_t high_rec = psec->high_rec;
+                bool check_tribit_inv_code = true;
+                if (psec->low_bits == psec->high_bits) {
+                    check_tribit_inv_code = false;
+                    if (i + 1 < raw->nb_sections) {
+                        const Section *psec_next = &raw->sections[i + 1];
+                        if (psec_next->low_bits >= 1) {
+                            recorded_t mask = ((recorded_t)1 << (psec_next->low_bits - 1));
+                            recorded_t rightbit = !!(psec_next->low_rec & mask);
+                            low_rec = (low_rec << 1) | rightbit;
+                            check_tribit_inv_code = true;
+                        }
+                    }
+                } else if (psec->low_bits - psec->high_bits != 1) {
+                    assert(false);
+                }
+                if (check_tribit_inv_code) {
+                    recorded_t mask = ((recorded_t)1 << psec->high_bits) - 1;
+                    if (((low_rec ^ high_rec) & mask) == mask)
+                        is_tribit_inv = true;
+                }
+            }
+            if (is_tribit)
+                code = CODE_TRIBIT;
+            else if (is_tribit_inv)
+                code = CODE_TRIBIT_INV;
         }
+
+
 #ifdef DEBUG_DECODE
         dbgf("%02d  %s", i, code_names[code]);
 #endif
@@ -1144,7 +1195,7 @@ void loop() {
     if (!counter) {
         delay(100);
         dbg("----- BEGIN TEST -----");
-#ifdef TRACKDEBUG
+#ifdef TRACK_DEBUG
         dbg("[");
 #endif
     }
@@ -1163,7 +1214,7 @@ void loop() {
     dbgf("IH_max_pending_timings = %d", IH_max_pending_timings);
 #endif
 
-#ifdef TRACKDEBUG
+#ifdef TRACK_DEBUG
     if (sim_int_count >= sim_timings_count) {
         dbg("]");
     }
@@ -1200,7 +1251,7 @@ void loop() {
 
 #ifdef RAWCODE_SECTIONS_DEBUG
     dbgf("IH_max_pending_timings = %d", IH_max_pending_timings);
-    RawCode *praw = track.get_rawcode();
+    const RawCode *praw = track.get_rawcode();
     praw->debug_rawcode();
     decode_rawcode(praw);
 #endif
