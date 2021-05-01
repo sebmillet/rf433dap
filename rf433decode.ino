@@ -35,13 +35,13 @@
 
 #if TESTPLAN == 1
 
-#define SIMULATE
-#define TRACK_DEBUG
+#define DBG_SIMULATE
+#define DBG_TRACK
 
 #elif TESTPLAN == 2 // TESTPLAN
 
-#define SIMULATE
-#define RAWCODE_SECTIONS_DEBUG
+#define DBG_SIMULATE
+#define DBG_RAWCODE
 
 #else // TESTPLAN
 
@@ -49,22 +49,28 @@
 #error "TESTPLAN macro has an illegal value."
 #endif
 
-// [OK_TO_UPDATE]
+
+// ****************************************************************************
+// ****************************************************************************
+
 // It is OK to update the below, because if this code is compiled, then we are
 // not in the test plan.
 
-#define SIMULATE
-//#define TRACE
-//#define REC_TIMINGS
-//#define TRACK_DEBUG
-#define RAWCODE_SECTIONS_DEBUG
-#define DEBUG_DECODE
-//#define SMALL_RECORDED_T
+#define DBG_SIMULATE
+//#define DBG_TRACE
+//#define DBG_TIMINGS
+//#define DBG_TRACK
+#define DBG_RAWCODE
+#define DBG_DECODER
+#define DBG_SMALL_RECORDED_T
 
-#endif // TESTPLAN
+#endif // TESTPLAN ************************************************************
+// ****************************************************************************
 
-#if defined(SIMULATE) || defined(TRACE) || defined(REC_TIMINGS) \
-    || defined(TRACK_DEBUG) || defined(RAWCODE_SECTIONS_DEBUG)
+
+#if defined(DBG_SIMULATE) || defined(DBG_TRACE) || defined(DBG_TIMINGS) \
+    || defined(DBG_TRACK) || defined(DBG_RAWCODE) \
+    || defined(DBG_DECODER)
 #define DEBUG
 #endif
 
@@ -78,7 +84,7 @@
 // * Read input from serial ***************************************************
 // * ********************** ***************************************************
 
-#ifdef SIMULATE
+#ifdef DBG_SIMULATE
 
 //
 // SerialLine
@@ -184,7 +190,7 @@ void SerialLine::get_line_blocking(char *s, size_t len) {
         ;
 }
 
-#endif // SIMULATE
+#endif // DBG_SIMULATE
 
 
 // * ******************** *****************************************************
@@ -311,7 +317,7 @@ inline void Band::breset() {
 
 inline bool Band::init(uint16_t d) {
 
-#ifdef TRACE
+#ifdef DBG_TRACE
     dbgf("B> init: %u", d);
 #endif
 
@@ -330,7 +336,7 @@ inline bool Band::init(uint16_t d) {
 
 inline bool Band::init_sep(uint16_t d) {
 
-#ifdef TRACE
+#ifdef DBG_TRACE
     dbgf("BSEP> init: %u", d);
 #endif
 
@@ -352,11 +358,11 @@ inline bool Band::test_value_init_if_needed(uint16_t d) {
         init(d);
     } else {
         got_it = (d >= inf && d <= sup);
-#ifdef TRACE
+#ifdef DBG_TRACE
         dbgf("B> cmp %u to [%u, %u]", d, inf, sup);
 #endif
     }
-#ifdef TRACE
+#ifdef DBG_TRACE
     dbgf("B> res: %d", got_it);
 #endif
     return got_it;
@@ -365,16 +371,16 @@ inline bool Band::test_value_init_if_needed(uint16_t d) {
 inline bool Band::test_value(uint16_t d) {
     if (!mid) {
         got_it = false;
-#ifdef TRACE
+#ifdef DBG_TRACE
         dbgf("BSEP> cmp %u to uninit'd", d);
 #endif
     } else {
         got_it = (d >= inf && d <= sup);
-#ifdef TRACE
+#ifdef DBG_TRACE
         dbgf("BSEP> cmp %u to [%u, %u]", d, inf, sup);
 #endif
     }
-#ifdef TRACE
+#ifdef DBG_TRACE
     dbgf("BSEP> res: %d", got_it);
 #endif
     return got_it;
@@ -385,17 +391,17 @@ inline bool Band::test_value(uint16_t d) {
 // * Rail *********************************************************************
 // * **** *********************************************************************
 
-#ifdef SMALL_RECORDED_T
+#ifdef DBG_SMALL_RECORDED_T
 
 typedef uint8_t recorded_t;
 #define FMTRECORDEDT "%02x"
 
-#else // SMALL_RECORDED_T
+#else // DBG_SMALL_RECORDED_T
 
 typedef uint32_t recorded_t;
 #define FMTRECORDEDT "%08lx"
 
-#endif // SMALL_RECORDED_T
+#endif // DBG_SMALL_RECORDED_T
 
 #define RAIL_OPEN     0
 #define RAIL_FULL     1
@@ -419,7 +425,7 @@ class Rail {
         bool rail_eat(uint16_t d);
         void rreset();
         void rreset_soft();
-#ifdef TRACK_DEBUG
+#ifdef DBG_TRACK
         void rail_debug() const;
 #endif
         byte get_band_count() const;
@@ -445,7 +451,7 @@ inline void Rail::rreset_soft() {
 
 inline bool Rail::rail_eat(uint16_t d) {
 
-#ifdef TRACE
+#ifdef DBG_TRACE
     dbgf("R> index = %d, d = %u", index, d);
 #endif
 
@@ -460,7 +466,7 @@ inline bool Rail::rail_eat(uint16_t d) {
 
     byte band_count = get_band_count();
 
-#ifdef TRACE
+#ifdef DBG_TRACE
     dbgf("R> b_short.got_it = %d, b_long.got_it = %d, "
                   "band_count = %d", b_short.got_it, b_long.got_it,
                   band_count);
@@ -500,14 +506,14 @@ inline bool Rail::rail_eat(uint16_t d) {
             assert(false);
         }
 
-#ifdef TRACE
+#ifdef DBG_TRACE
         dbg("R> P0");
 #endif
 
         if ((small << 2) >= big) {
             if (pband->init(d)) {
 
-#ifdef TRACE
+#ifdef DBG_TRACE
                 dbg("R> P1");
 #endif
 
@@ -577,7 +583,7 @@ inline bool Rail::rail_eat(uint16_t d) {
     return (status == RAIL_OPEN);
 }
 
-#ifdef TRACK_DEBUG
+#ifdef DBG_TRACK
 const char* status_names[] = {
     "open",
     "full",
@@ -638,13 +644,13 @@ struct RawCode {
     void debug_rawcode() const;
 };
 
-#ifdef RAWCODE_SECTIONS_DEBUG
+#ifdef DBG_RAWCODE
 const char *sts_names[] = {
-    "STS_CONTINUED",
-    "STS_SHORT_SEP",
-    "STS_LONG_SEP",
-    "STS_SEP_SEP",
-    "STS_ERROR"
+    "CONT",
+    "SSEP",
+    "LSEP",
+    "2SEP",
+    "ERR"
 };
 void RawCode::debug_rawcode() const {
     dbgf("> nb_sections = %d, initseq = %u",
@@ -666,11 +672,16 @@ void RawCode::debug_rawcode() const {
 // * Track ********************************************************************
 // * ***** ********************************************************************
 
-#ifdef SIMULATE
+#ifdef DBG_SIMULATE
 SerialLine sl;
 char buffer[SerialLine::buf_len];
 
+#ifdef DBG_TIMINGS
+uint16_t sim_timings[150];
+#else
 uint16_t sim_timings[260];
+//uint16_t sim_timings[140];
+#endif
 
 uint16_t sim_timings_count = 0;
 
@@ -697,7 +708,7 @@ class Track {
 
         void treset();
         void track_eat(byte r, uint16_t d);
-#ifdef TRACK_DEBUG
+#ifdef DBG_TRACK
         void track_debug() const;
 #endif
 
@@ -717,7 +728,7 @@ inline void Track::treset() {
 
 inline void Track::track_eat(byte r, uint16_t d) {
 
-#ifdef TRACE
+#ifdef DBG_TRACE
     dbgf("T> trk = %d, r = %d, d = %u", trk, r, d);
 #endif
 
@@ -747,7 +758,7 @@ inline void Track::track_eat(byte r, uint16_t d) {
     bool b = prail->rail_eat(d);
     if (r == 1 && (!b || r_low.status != RAIL_OPEN)) {
 
-#ifdef TRACE
+#ifdef DBG_TRACE
         dbgf("T> b = %d", b);
 #endif
 
@@ -833,7 +844,7 @@ Notations:
 
         bool record_current_section;
 
-#ifdef TRACK_DEBUG
+#ifdef DBG_TRACK
         bool do_track_debug = false;
         (void)do_track_debug;
 #endif
@@ -845,21 +856,21 @@ Notations:
                  && rawcode.sections[rawcode.nb_sections - 1].sts
                     == STS_CONTINUED);
 
-#ifdef TRACK_DEBUG
+#ifdef DBG_TRACK
             do_track_debug = record_current_section;
 #endif
 
         } else {
             record_current_section = (sts != STS_ERROR);
 
-#ifdef TRACK_DEBUG
+#ifdef DBG_TRACK
             do_track_debug = true;
 #endif
 
         }
 
-#if defined(SIMULATE) && defined(TRACK_DEBUG)
-#ifdef TRACE
+#if defined(DBG_SIMULATE) && defined(DBG_TRACK)
+#ifdef DBG_TRACE
         dbgf("T> reccursec=%i, sts=%i", record_current_section, sts);
 #endif
         if (do_track_debug) {
@@ -903,7 +914,7 @@ Notations:
     }
 }
 
-#ifdef TRACK_DEBUG
+#ifdef DBG_TRACK
 const char* trk_names[] = {
     "TRK_WAIT",
     "TRK_RECV",
@@ -925,14 +936,266 @@ void Track::track_debug() const {
 #endif
 
 
+// * ******* ******************************************************************
+// * Decoder ******************************************************************
+// * ******* ******************************************************************
+
+    // IMPORTANT
+    //   VALUES ARE NOT ARBITRARY.
+    //   CONVENTION_0 must be 0 and CONVENTION_1 must be 1.
+    //   This is due to the decoding that uses a bit value ultimately coming
+    //   from CONVENTION_0 or CONVENTION_1.
+#define CONVENTION_0 0
+#define CONVENTION_1 1
+
+typedef enum {
+    SD_SHORT,
+    SD_LONG,
+    SD_OTHER
+} sgn_duration_t;
+
+#define DEC_ID_START      0 // For enumeration
+#define DEC_ID_TRIBIT     0
+#define DEC_ID_TRIBIT_INV 1
+#define DEC_ID_MANCHESTER 2
+#define DEC_ID_END        2 // For enumeration
+
+#ifdef DBG_DECODER
+const char *dec_id_names[] = {
+    "TRI",
+    "TRIINV",
+    "MAN"
+};
+#endif
+
+#define DECODER_NB_BYTES 16
+//#define DECODER_NB_BYTES 6
+
+class Decoder {
+    protected:
+        uint8_t data[DECODER_NB_BYTES];
+        byte convention;
+
+        byte nb_bits;
+        byte nb_errors;
+        bool last_is_error;
+
+        void add_decoded_bit(byte valbit);
+
+    public:
+        Decoder(byte arg_convention);
+        virtual ~Decoder() { }
+        virtual byte get_id() const = 0;
+
+        static Decoder *build_decoder(byte id);
+
+        virtual void add_sgn_lo_hi(sgn_duration_t low, sgn_duration_t high) = 0;
+        byte get_nb_errors() const;
+        byte get_nb_bits() const;
+
+#ifdef DBG_DECODER
+        void output_data() const;
+#endif
+};
+
+Decoder::Decoder(byte arg_convention):
+        convention(arg_convention),
+        nb_bits(0),
+        nb_errors(0),
+        last_is_error(false)
+{
+    for (byte i = 0; i < DECODER_NB_BYTES; ++i)
+        data[i] = 0;
+}
+
+void Decoder::add_decoded_bit(byte valbit) {
+    if (++nb_bits < (DECODER_NB_BYTES << 3)) {
+        for (int i = DECODER_NB_BYTES - 1; i >= 0; --i) {
+
+            byte b;
+            if (i > 0) {
+                b = !!(data[i - 1] & 0x80);
+            } else {
+                    // Defensive programming
+                    // Normally valbit is 0 or 1, but I normalize it, just in
+                    // case...
+                b = !!valbit;
+            }
+
+            data[i] = (data[i] << 1) | b;
+
+        }
+    }
+}
+
+byte Decoder::get_nb_errors() const { return nb_errors; }
+
+byte Decoder::get_nb_bits() const { return nb_bits; }
+
+#ifdef DBG_DECODER
+void Decoder::output_data() const {
+
+    dbgf("Decoder::id =        %s", dec_id_names[get_id()]);
+    dbgf("Decoder::nb_errors = %d", get_nb_errors());
+    dbgf("Decoder::nb_bits =   %d", get_nb_bits());
+
+    byte nb_bytes = (nb_bits + 7) >> 3;
+    char *buf = new char[nb_bytes * 3];
+    char tmp[3];
+    int j = 0;
+    for (int i = nb_bytes - 1; i >= 0 ; --i) {
+        snprintf(tmp, sizeof(tmp), "%02x", data[i]);
+        buf[j] = tmp[0];
+        buf[j + 1] = tmp[1];
+        buf[j + 2] = (i > 0 ? ' ' : '\0');
+        j += 3;
+    }
+    assert(j <= nb_bytes * 3);
+    dbgf("Decoder::data =      %s", buf);
+    delete buf;
+}
+#endif
+
+
+// * ************* ************************************************************
+// * DecoderTriBit ************************************************************
+// * ************* ************************************************************
+
+class DecoderTriBit: public Decoder {
+    private:
+        sgn_duration_t unused_final_low;
+
+    public:
+        DecoderTriBit(byte arg_convention = CONVENTION_0)
+                :Decoder(arg_convention) {
+        }
+        ~DecoderTriBit() { }
+
+        virtual byte get_id() const override { return DEC_ID_TRIBIT; }
+        virtual void add_sgn_lo_hi(sgn_duration_t low, sgn_duration_t high)
+            override;
+};
+
+void DecoderTriBit::add_sgn_lo_hi(sgn_duration_t lo, sgn_duration_t hi) {
+    last_is_error = false;
+
+        // The below case corresponds to the reception of (short, sep) or (high,
+        // sep), meaning, the low signal is meaningful whereas the high signal
+        // has no encoding meaning.
+    if (hi == SD_OTHER) {
+        unused_final_low = lo;
+        return;
+    }
+
+    byte valbit;
+    if (lo == SD_SHORT && hi == SD_LONG)
+        valbit = convention;
+    else if (lo == SD_LONG && hi == SD_SHORT)
+        valbit = !convention;
+    else {
+        ++nb_errors;
+        last_is_error = true;
+    }
+
+    if (!last_is_error)
+        add_decoded_bit(valbit);
+}
+
+
+// * **************** *********************************************************
+// * DecoderTriBitInv *********************************************************
+// * **************** *********************************************************
+
+class DecoderTriBitInv: public Decoder {
+    private:
+        bool first_call_to_add_sgn_lo_hi;
+        sgn_duration_t unused_initial_low;
+        sgn_duration_t last_hi;
+
+    public:
+        DecoderTriBitInv(byte arg_convention = CONVENTION_0)
+                :Decoder(arg_convention),
+                first_call_to_add_sgn_lo_hi(true) {
+        }
+        ~DecoderTriBitInv() { }
+
+        virtual byte get_id() const override { return DEC_ID_TRIBIT_INV; }
+        virtual void add_sgn_lo_hi(sgn_duration_t low, sgn_duration_t high)
+            override;
+};
+
+void DecoderTriBitInv::add_sgn_lo_hi(sgn_duration_t lo, sgn_duration_t hi) {
+
+    last_is_error = false;
+
+    if (first_call_to_add_sgn_lo_hi) {
+        first_call_to_add_sgn_lo_hi = false;
+        unused_initial_low = lo;
+        last_hi = hi;
+        return;
+    }
+
+    byte valbit;
+    if (lo == SD_SHORT && last_hi == SD_LONG)
+        valbit = !convention;
+    else if (lo == SD_LONG && last_hi == SD_SHORT)
+        valbit = convention;
+    else {
+        ++nb_errors;
+        last_is_error = true;
+    }
+
+    if (!last_is_error)
+        add_decoded_bit(valbit);
+
+    last_hi = hi;
+}
+
+
+// * ***************** ********************************************************
+// * DecoderManchester ********************************************************
+// * ***************** ********************************************************
+
+class DecoderManchester: public Decoder {
+    private:
+
+    public:
+        DecoderManchester(byte arg_convention = CONVENTION_0)
+                :Decoder(convention) {
+        }
+        ~DecoderManchester() { }
+
+        virtual byte get_id() const override { return DEC_ID_MANCHESTER; }
+        virtual void add_sgn_lo_hi(sgn_duration_t low, sgn_duration_t high)
+            override;
+};
+
+void DecoderManchester::add_sgn_lo_hi(sgn_duration_t lo, sgn_duration_t hi) {
+        // Placeholder for yet-to-come Manchester decoding...
+    ++nb_errors;
+    last_is_error = true;
+}
+
+Decoder* Decoder::build_decoder(byte id) {
+    switch (id) {
+        case DEC_ID_TRIBIT:     return new DecoderTriBit();
+        case DEC_ID_TRIBIT_INV: return new DecoderTriBitInv();
+        case DEC_ID_MANCHESTER: return new DecoderManchester();
+        default:
+            assert(false);
+    }
+    return nullptr; // Never executed
+}
+
+
 // * ************* ************************************************************
 // * Interruptions ************************************************************
 // * ************* ************************************************************
 
-#ifdef REC_TIMINGS
-uint16_t ih_dbg_timings[80];
-uint16_t ih_exec[80];
-unsigned int ih_dbg_timing_pos = 0;
+#ifdef DBG_TIMINGS
+uint16_t ih_dbg_timings[60];
+uint16_t ih_dbg_exec[60];
+unsigned int ih_dbg_pos = 0;
 #endif
 
 typedef struct {
@@ -959,7 +1222,7 @@ void handle_interrupt() {
     static unsigned long last_t = 0;
     const unsigned long t = micros();
 
-#ifdef SIMULATE
+#ifdef DBG_SIMULATE
     unsigned long d;
     byte r = sim_int_count % 2;
     if (sim_int_count >= sim_timings_count) {
@@ -1018,9 +1281,23 @@ bool process_interrupt_timing(Track *ptrack) {
         sei();
 // END OF CRITICAL SECTION (CASE 1) !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-//        check_veryrecent(ptrack, timing.r, timing.d);
-
+#ifdef DBG_TIMINGS
+        unsigned long t0 = micros();
+#endif
         ptrack->track_eat(timing.r, timing.d);
+#ifdef DBG_TIMINGS
+        unsigned long d = micros() - t0;
+        if (d > MAX_DURATION)
+            d = MAX_DURATION;
+        ih_dbg_exec[ih_dbg_pos] = d;
+        if (ptrack->get_trk() == TRK_WAIT)
+            ih_dbg_pos = 0;
+        else {
+            if (ih_dbg_pos < sizeof(ih_dbg_timings) / sizeof(*ih_dbg_timings))
+                ih_dbg_timings[ih_dbg_pos++] = timing.d;
+        }
+#endif
+
         ret = true;
 
     } else {
@@ -1039,7 +1316,7 @@ bool process_interrupt_timing(Track *ptrack) {
 // * Execution ****************************************************************
 // * ********* ****************************************************************
 
-#ifdef SIMULATE
+#ifdef DBG_SIMULATE
 void read_simulated_timings_from_usb() {
     sim_timings_count = 0;
     sim_int_count = 0;
@@ -1087,27 +1364,25 @@ void setup() {
 
 Track track;
 
-typedef enum {
-    CODE_NONE,
-    CODE_UNDETERMINED,
-    CODE_SYNC,
-    CODE_TRIBIT,
-    CODE_TRIBIT_INV
-} code_t;
+#define CODE_NONE         0
+#define CODE_INCONSISTENT 1
+#define CODE_SYNC         2
+#define CODE_DATA         3
 
-#ifdef DEBUG_DECODE
+#ifdef DBG_DECODER
 const char *code_names[] = {
     "CODE_NONE",
-    "CODE_UNDETERMINED",
+    "CODE_INCONSISTENT",
     "CODE_SYNC",
-    "CODE_TRIBIT",
-    "CODE_TRIBIT_INV"
+    "CODE_DATA"
 };
 #endif
 void decode_rawcode(const RawCode *raw) {
-    code_t code;
+    Decoder *pdec = nullptr;
+
     for (byte i = 0; i < raw->nb_sections; ++i) {
-        code = CODE_NONE;
+
+        byte code = CODE_NONE;
         const Section *psec = &raw->sections[i];
 
         if (abs(psec->low_bits - psec->high_bits) >= 2) {
@@ -1115,71 +1390,60 @@ void decode_rawcode(const RawCode *raw) {
                 // It should never happen because we continually check that 'r'
                 // submitted values (as argument to track_eat()) switch between
                 // 0 and 1, so that low and high rails are populated equally.
-            code = CODE_UNDETERMINED;
+            code = CODE_INCONSISTENT;
+
         } else if (psec->low_bands == 1 && psec->high_bands == 1) {
             code = CODE_SYNC;
+
         } else if (psec->low_bands == 1 || psec->high_bands == 1) {
-            code = CODE_UNDETERMINED;
+            code = CODE_INCONSISTENT;
+
         } else {
+            byte enum_decoders = DEC_ID_START;
+            do {
+                if (!pdec)
+                    pdec = Decoder::build_decoder(enum_decoders);
 
-            bool is_tribit = false;
-            bool is_tribit_inv = false;
+                byte pos_low = psec->low_bits;
+                byte pos_high = psec->high_bits;
 
-            recorded_t low_rec = psec->low_rec;
-            recorded_t high_rec = psec->high_rec;
-            bool check_tribit_code = false;
-            if (psec->low_bits >= 1 && psec->high_bits >= 1) {
-                check_tribit_code = true;
-                recorded_t *prec = nullptr;
-                if (psec->low_bits > psec->high_bits) {
-                    prec = &low_rec;
-                } else if (psec->high_bits > psec->low_bits) {
-                    prec = &high_rec;
-                }
-                if (prec)
-                    *prec >>= 1;
-            }
-            if (check_tribit_code) {
-                byte n = min(psec->low_bits, psec->high_bits);
-                recorded_t comp = ((recorded_t)1 << n) - 1;
-                if ((low_rec ^ high_rec) == comp)
-                    is_tribit = true;
-            }
-            if (code == CODE_NONE && psec->high_bits >= 1
-                        && psec->low_bits >= psec->high_bits) {
-                recorded_t low_rec = psec->low_rec;
-                recorded_t high_rec = psec->high_rec;
-                bool check_tribit_inv_code = true;
-                if (psec->low_bits == psec->high_bits) {
-                    check_tribit_inv_code = false;
-                    if (i + 1 < raw->nb_sections) {
-                        const Section *psec_next = &raw->sections[i + 1];
-                        if (psec_next->low_bits >= 1) {
-                            recorded_t mask = ((recorded_t)1 << (psec_next->low_bits - 1));
-                            recorded_t rightbit = !!(psec_next->low_rec & mask);
-                            low_rec = (low_rec << 1) | rightbit;
-                            check_tribit_inv_code = true;
-                        }
+                while (pos_low >= 1 || pos_high >= 1) {
+                    sgn_duration_t sd_low = SD_OTHER;
+                    sgn_duration_t sd_high = SD_OTHER;
+                    if (pos_low >= 1) {
+                        --pos_low;
+                        sd_low = ((((recorded_t)1 << pos_low) & psec->low_rec) ?
+                                    SD_LONG : SD_SHORT);
                     }
-                } else if (psec->low_bits - psec->high_bits != 1) {
-                    assert(false);
+                    if (pos_high >= 1) {
+                        --pos_high;
+                        sd_high = ((((recorded_t)1 << pos_high) & psec->high_rec) ?
+                                    SD_LONG : SD_SHORT);
+                    }
+                    pdec->add_sgn_lo_hi(sd_low, sd_high);
                 }
-                if (check_tribit_inv_code) {
-                    recorded_t mask = ((recorded_t)1 << psec->high_bits) - 1;
-                    if (((low_rec ^ high_rec) & mask) == mask)
-                        is_tribit_inv = true;
+                if (pdec->get_nb_errors()) {
+                    delete pdec;
+                    pdec = nullptr;
                 }
-            }
-            if (is_tribit)
-                code = CODE_TRIBIT;
-            else if (is_tribit_inv)
-                code = CODE_TRIBIT_INV;
+            } while (!pdec && ++enum_decoders <= DEC_ID_END);
+
+            code = (pdec ? CODE_DATA : CODE_INCONSISTENT);
+
         }
 
-
-#ifdef DEBUG_DECODE
-        dbgf("%02d  %s", i, code_names[code]);
+#ifdef DBG_DECODER
+        dbgf("code = %s", code_names[code]);
 #endif
+        if (code == CODE_DATA) {
+            if (psec->sts != STS_CONTINUED) {
+#ifdef DBG_DECODER
+                pdec->output_data();
+#endif
+                delete pdec;
+                pdec = nullptr;
+            }
+        }
     }
 }
 
@@ -1187,7 +1451,7 @@ void loop() {
 
 //    initialize_veryrecent();
 
-#ifdef SIMULATE
+#ifdef DBG_SIMULATE
 
     if (sim_int_count >= sim_timings_count)
         read_simulated_timings_from_usb();
@@ -1195,7 +1459,7 @@ void loop() {
     if (!counter) {
         delay(100);
         dbg("----- BEGIN TEST -----");
-#ifdef TRACK_DEBUG
+#ifdef DBG_TRACK
         dbg("[");
 #endif
     }
@@ -1210,27 +1474,29 @@ void loop() {
         while (track.get_trk() != TRK_DATA && process_interrupt_timing(&track)) {
         }
     }
-#ifdef RAWCODE_SECTIONS_DEBUG
+#ifdef DBG_RAWCODE
     dbgf("IH_max_pending_timings = %d", IH_max_pending_timings);
 #endif
 
-#ifdef TRACK_DEBUG
+#ifdef DBG_TRACK
     if (sim_int_count >= sim_timings_count) {
         dbg("]");
     }
 #endif
 
-#ifdef RAWCODE_SECTIONS_DEBUG
     const RawCode *praw = track.get_rawcode();
+
+#ifdef DBG_RAWCODE
     praw->debug_rawcode();
-    decode_rawcode(praw);
 #endif
+
+    decode_rawcode(praw);
 
     if (sim_int_count >= sim_timings_count) {
         dbg("----- END TEST -----");
     }
 
-#else // SIMULATE
+#else // !defined(DBG_SIMULATE)
 
     dbg("Waiting for signal");
     track.treset();
@@ -1240,28 +1506,25 @@ void loop() {
         while (track.get_trk() != TRK_DATA && process_interrupt_timing(&track)) {
         }
 
-#ifdef REC_TIMINGS
-        if (track.get_trk() == TRK_WAIT)
-            ih_dbg_timing_pos = 0;
-#endif
-
         sleep_mode();
     }
     detachInterrupt(INT_RFINPUT);
 
-#ifdef RAWCODE_SECTIONS_DEBUG
     dbgf("IH_max_pending_timings = %d", IH_max_pending_timings);
     const RawCode *praw = track.get_rawcode();
+
+#ifdef DBG_RAWCODE
     praw->debug_rawcode();
-    decode_rawcode(praw);
 #endif
 
-#endif // SIMULATE
+    decode_rawcode(praw);
 
-#ifdef REC_TIMINGS
-    for (unsigned int i = 0; i < ih_dbg_timing_pos - 1; i += 2) {
+#endif // DBG_SIMULATE
+
+#ifdef DBG_TIMINGS
+    for (unsigned int i = 0; i + 1 < ih_dbg_pos; i += 2) {
         dbgf("%4u, %4u  |  %5u, %5u", ih_dbg_timings[i], ih_dbg_timings[i + 1],
-             ih_exec[i], ih_exec[i + 1]);
+             ih_dbg_exec[i], ih_dbg_exec[i + 1]);
     }
 #endif
 
