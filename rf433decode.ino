@@ -1158,11 +1158,14 @@ void DecoderTriBitInv::add_sgn_lo_hi(sgn_duration_t lo, sgn_duration_t hi) {
 
 class DecoderManchester: public Decoder {
     private:
+        byte buf[3];
+        byte buf_pos;
+
+        void add_buf(byte r);
+        void consume_buf();
 
     public:
-        DecoderManchester(byte arg_convention = CONVENTION_0)
-                :Decoder(convention) {
-        }
+        DecoderManchester(byte arg_convention = CONVENTION_0);
         ~DecoderManchester() { }
 
         virtual byte get_id() const override { return DEC_ID_MANCHESTER; }
@@ -1170,10 +1173,51 @@ class DecoderManchester: public Decoder {
             override;
 };
 
+DecoderManchester::DecoderManchester(byte arg_convention)
+        :Decoder(arg_convention),buf_pos(0) {
+    for (byte i = 0; i < sizeof(buf) / sizeof(*buf); ++i) {
+        buf[i] = 0;
+    }
+}
+
+void DecoderManchester::add_buf(byte r) {
+    assert(buf_pos < sizeof(buf)  /sizeof(*buf));
+    buf[buf_pos++] = r;
+}
+
+void DecoderManchester::consume_buf() {
+    last_is_error = false;
+    if (buf_pos >= 2) {
+        if (buf[0] == 0 && buf[1] == 1) {
+            add_decoded_bit(convention);
+        } else if (buf[0] == 1 && buf[1] == 0) {
+            add_decoded_bit(!convention);
+        } else {
+                // FIXME: créer register_error pour gérer ça de manière
+                // cohérente entre les différents descendants de Decoder.
+            ++nb_errors;
+            last_is_error = true;
+        }
+            // Not always necessary, but harmless if done while not necessary
+        buf[0] = buf[2];
+        buf_pos -= 2;
+    }
+}
+
 void DecoderManchester::add_sgn_lo_hi(sgn_duration_t lo, sgn_duration_t hi) {
-        // Placeholder for yet-to-come Manchester decoding...
-    ++nb_errors;
-    last_is_error = true;
+    if (lo == SD_OTHER) {
+        ++nb_errors;
+        last_is_error = true;
+        return;
+    }
+
+    for (byte i = 0; i < 2; ++i) {
+        sgn_duration_t sgn = (i == 0 ? lo : hi);
+        add_buf(i);
+        if (sgn == SD_LONG)
+            add_buf(i);
+        consume_buf();
+    }
 }
 
 Decoder* Decoder::build_decoder(byte id) {
@@ -1417,8 +1461,9 @@ void decode_rawcode(const RawCode *raw) {
                     }
                     if (pos_high >= 1) {
                         --pos_high;
-                        sd_high = ((((recorded_t)1 << pos_high) & psec->high_rec) ?
-                                    SD_LONG : SD_SHORT);
+                        sd_high =
+                            ((((recorded_t)1 << pos_high) & psec->high_rec) ?
+                            SD_LONG : SD_SHORT);
                     }
                     pdec->add_sgn_lo_hi(sd_low, sd_high);
                 }
