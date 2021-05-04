@@ -60,7 +60,7 @@
 //#define DBG_TRACE
 //#define DBG_TIMINGS
 //#define DBG_TRACK
-#define DBG_RAWCODE
+//#define DBG_RAWCODE
 #define DBG_DECODER
 #define DBG_SMALL_RECORDED_T
 
@@ -553,12 +553,24 @@ inline bool Rail::rail_eat(uint16_t d) {
                 // BAND_MAX_D is 30000, and multiplying .mid by 2 will produce a
                 // maximum value of 60000, that's OK for an unsigned 16-bit int.
             if (d >= (b_short.mid << 1) && d >= (b_long.mid << 1)) {
+#ifdef DBG_TRACE
+                dbg("R> init b_sep");
+#endif
                     // We can end up with an overlap between b_sep and b_long.
                     // Not an issue.
                 b_sep.init_sep(d);
+            } else {
+#ifdef DBG_TRACE
+                dbg("R> no init of b_sep (d too small)");
+#endif
             }
         }
         status = (b_sep.test_value(d) ? RAIL_STP_RCVD : RAIL_ERROR);
+
+#ifdef DBG_TRACE
+        dbgf("R> rail terminated, status = %d", status);
+#endif
+
             // FIXME?
             //   A big separator (bigger than b_sep.sup) could be seen as a
             //   TERMINATION separator (or INITIALIZATION SEQUENCE of the next
@@ -869,10 +881,10 @@ Notations:
 
         }
 
-#if defined(DBG_SIMULATE) && defined(DBG_TRACK)
 #ifdef DBG_TRACE
         dbgf("T> reccursec=%i, sts=%i", record_current_section, sts);
 #endif
+#if defined(DBG_SIMULATE) && defined(DBG_TRACK)
         if (do_track_debug) {
             dbgf("%s  {", counter >= 2 ? ",\n" : "");
             dbgf("    \"N\":%d,\"start\":%u,\"end\":%u,",
@@ -883,6 +895,9 @@ Notations:
 #endif
 
         if (record_current_section) {
+#ifdef DBG_TRACE
+            dbg("T> recording current section");
+#endif
             Section *psec = &rawcode.sections[rawcode.nb_sections++];
             psec->sts = sts;
             psec->sep = (sts == STS_SHORT_SEP
@@ -897,8 +912,15 @@ Notations:
             trk = ((rawcode.nb_sections == MAX_SECTIONS) ? TRK_DATA : TRK_RECV);
 
             if (trk == TRK_RECV) {
+#ifdef DBG_TRACE
+                dbg("T> keep receiving (soft reset)");
+#endif
                 r_low.rreset_soft();
                 r_high.rreset_soft();
+            } else {
+#ifdef DBG_TRACE
+                dbg("T> stop receiving (data)");
+#endif
             }
         } else {
             if (rawcode.nb_sections) {
@@ -954,14 +976,20 @@ typedef enum {
     SD_OTHER
 } sgn_duration_t;
 
-#define DEC_ID_START      0 // For enumeration
-#define DEC_ID_TRIBIT     0
-#define DEC_ID_TRIBIT_INV 1
-#define DEC_ID_MANCHESTER 2
-#define DEC_ID_END        2 // For enumeration
+#define DEC_ID_RAW_INCONSISTENT 0
+#define DEC_ID_RAW_SYNC         1
+#define DEC_ID_UNKNOWN_CODING   2
+#define DEC_ID_START            3 // Start of enumeration of real decoders
+#define DEC_ID_TRIBIT           3
+#define DEC_ID_TRIBIT_INV       4
+#define DEC_ID_MANCHESTER       5
+#define DEC_ID_END              5 // End of enumeration of real decoders
 
 #ifdef DBG_DECODER
 const char *dec_id_names[] = {
+    "INCONSISTENT",
+    "SYNC",
+    "UNKNOWN",
     "TRI",
     "TRIINV",
     "MAN"
@@ -980,18 +1008,22 @@ class Decoder {
         byte nb_errors;
         bool last_is_error;
 
+        Decoder *next;
+
         void add_decoded_bit(byte valbit);
 
     public:
         Decoder(byte arg_convention);
-        virtual ~Decoder() { }
+        virtual ~Decoder();
         virtual byte get_id() const = 0;
 
         static Decoder *build_decoder(byte id);
 
         virtual void add_sgn_lo_hi(sgn_duration_t low, sgn_duration_t high) = 0;
-        byte get_nb_errors() const;
-        byte get_nb_bits() const;
+        virtual byte get_nb_errors() const;
+        virtual byte get_nb_bits() const;
+
+        virtual void attach_next(Decoder *pdec);
 
 #ifdef DBG_DECODER
         void output_data() const;
@@ -1002,10 +1034,21 @@ Decoder::Decoder(byte arg_convention):
         convention(arg_convention),
         nb_bits(0),
         nb_errors(0),
-        last_is_error(false)
+        last_is_error(false),
+        next(nullptr)
 {
     for (byte i = 0; i < DECODER_NB_BYTES; ++i)
         data[i] = 0;
+}
+
+Decoder::~Decoder() {
+    if (next)
+        delete next;
+}
+
+void Decoder::attach_next(Decoder *pdec) {
+    assert(!next);
+    next = pdec;
 }
 
 void Decoder::add_decoded_bit(byte valbit) {
@@ -1034,27 +1077,51 @@ byte Decoder::get_nb_bits() const { return nb_bits; }
 
 #ifdef DBG_DECODER
 void Decoder::output_data() const {
-
-    dbgf("Decoder::id =        %s", dec_id_names[get_id()]);
-    dbgf("Decoder::nb_errors = %d", get_nb_errors());
-    dbgf("Decoder::nb_bits =   %d", get_nb_bits());
-
-    byte nb_bytes = (nb_bits + 7) >> 3;
-    char *buf = new char[nb_bytes * 3];
-    char tmp[3];
-    int j = 0;
-    for (int i = nb_bytes - 1; i >= 0 ; --i) {
-        snprintf(tmp, sizeof(tmp), "%02x", data[i]);
-        buf[j] = tmp[0];
-        buf[j + 1] = tmp[1];
-        buf[j + 2] = (i > 0 ? ' ' : '\0');
-        j += 3;
+    if (nb_bits) {
+        byte nb_bytes = (nb_bits + 7) >> 3;
+        char *buf = new char[nb_bytes * 3];
+        char tmp[3];
+        int j = 0;
+        for (int i = nb_bytes - 1; i >= 0 ; --i) {
+            snprintf(tmp, sizeof(tmp), "%02x", data[i]);
+            buf[j] = tmp[0];
+            buf[j + 1] = tmp[1];
+            buf[j + 2] = (i > 0 ? ' ' : '\0');
+            j += 3;
+        }
+        assert(j <= nb_bytes * 3);
+        dbgf("Received %d bits: %s", get_nb_bits(), buf);
+        delete buf;
+    } else {
+        dbgf("No data received, type = %s", dec_id_names[get_id()]);
     }
-    assert(j <= nb_bytes * 3);
-    dbgf("Decoder::data =      %s", buf);
-    delete buf;
 }
 #endif
+
+
+// * ********** ***************************************************************
+// * DecoderRaw ***************************************************************
+// * ********** ***************************************************************
+
+    // This Decoder is 'fake', it won't decode anything, it'll rather record raw
+    // data when signal is no good.
+    // But it is convenient to give it a Decoder interface.
+class DecoderRaw: public Decoder {
+    private:
+        byte dec_id_type;
+
+    public:
+        DecoderRaw(byte arg_dec_id_type):
+                Decoder(CONVENTION_0),
+                dec_id_type(arg_dec_id_type) {
+        }
+        ~DecoderRaw() { }
+
+        virtual byte get_id() const override { return dec_id_type; }
+
+        virtual void add_sgn_lo_hi(sgn_duration_t lo, sgn_duration_t hi)
+            override { }
+};
 
 
 // * ************* ************************************************************
@@ -1252,7 +1319,7 @@ typedef struct {
     //   The size of IH_timings must be a power of 2.
     //   Thus, IH_MASK allows to quickly calculate modulo, while walking through
     //   IH_timings.
-#define IH_SIZE 32
+#define IH_SIZE 16 // FIXME (used to be 32)
 #define IH_MASK (IH_SIZE - 1)
 IH_timing_t IH_timings[IH_SIZE];
 volatile unsigned char IH_write_head = 0;
@@ -1408,42 +1475,35 @@ void setup() {
 
 Track track;
 
-#define CODE_NONE         0
-#define CODE_INCONSISTENT 1
-#define CODE_SYNC         2
-#define CODE_DATA         3
-
-#ifdef DBG_DECODER
-const char *code_names[] = {
-    "CODE_NONE",
-    "CODE_INCONSISTENT",
-    "CODE_SYNC",
-    "CODE_DATA"
-};
-#endif
-void decode_rawcode(const RawCode *raw) {
+Decoder* decode_rawcode(const RawCode *raw) {
+    Decoder *pdec_head = nullptr;
+    Decoder *pdec_tail = nullptr;
     Decoder *pdec = nullptr;
 
     for (byte i = 0; i < raw->nb_sections; ++i) {
 
-        byte code = CODE_NONE;
         const Section *psec = &raw->sections[i];
+        bool forward_pdec;
 
         if (abs(psec->low_bits - psec->high_bits) >= 2) {
                 // Defensive programming (should never happen).
                 // It should never happen because we continually check that 'r'
                 // submitted values (as argument to track_eat()) switch between
                 // 0 and 1, so that low and high rails are populated equally.
-            code = CODE_INCONSISTENT;
-
+            assert(false);
         } else if (psec->low_bands == 1 && psec->high_bands == 1) {
-            code = CODE_SYNC;
+            assert(!pdec);
+            pdec = new DecoderRaw(DEC_ID_RAW_SYNC);
+            forward_pdec = true;
 
         } else if (psec->low_bands == 1 || psec->high_bands == 1) {
-            code = CODE_INCONSISTENT;
+            assert(!pdec);
+            pdec = new DecoderRaw(DEC_ID_RAW_INCONSISTENT);
+            forward_pdec = true;
 
         } else {
             byte enum_decoders = DEC_ID_START;
+            bool is_continuation_of_prev_section = pdec;
             do {
                 if (!pdec)
                     pdec = Decoder::build_decoder(enum_decoders);
@@ -1467,29 +1527,35 @@ void decode_rawcode(const RawCode *raw) {
                     }
                     pdec->add_sgn_lo_hi(sd_low, sd_high);
                 }
-                if (pdec->get_nb_errors()) {
+                if (!is_continuation_of_prev_section && pdec->get_nb_errors()) {
                     delete pdec;
                     pdec = nullptr;
                 }
             } while (!pdec && ++enum_decoders <= DEC_ID_END);
 
-            code = (pdec ? CODE_DATA : CODE_INCONSISTENT);
+            if (!pdec)
+                pdec = new DecoderRaw(DEC_ID_UNKNOWN_CODING);
 
+            forward_pdec = (psec->sts != STS_CONTINUED);
         }
 
 #ifdef DBG_DECODER
-        dbgf("code = %s", code_names[code]);
+//        dbgf("code = %s", code_names[code]);
 #endif
-        if (code == CODE_DATA) {
-            if (psec->sts != STS_CONTINUED) {
-#ifdef DBG_DECODER
-                pdec->output_data();
-#endif
-                delete pdec;
-                pdec = nullptr;
+        if (forward_pdec) {
+            if (!pdec_head) {
+                assert(!pdec_tail);
+                pdec_head = pdec;
+                pdec_tail = pdec;
+            } else {
+                assert(pdec_tail);
+                pdec_tail->attach_next(pdec);
+                pdec_tail = pdec;
             }
+            pdec = nullptr;
         }
     }
+    return pdec_head;
 }
 
 void loop() {
@@ -1535,7 +1601,13 @@ void loop() {
     praw->debug_rawcode();
 #endif
 
-    decode_rawcode(praw);
+    Decoder *pdec = decode_rawcode(praw);
+    if (pdec) {
+#ifdef DBG_DECODER
+        pdec->output_data();
+#endif
+        delete pdec;
+    }
 
     if (sim_int_count >= sim_timings_count) {
         dbg("----- END TEST -----");
@@ -1555,7 +1627,9 @@ void loop() {
     }
     detachInterrupt(INT_RFINPUT);
 
+#ifdef DBG_RAWCODE
     dbgf("IH_max_pending_timings = %d", IH_max_pending_timings);
+#endif
     const RawCode *praw = track.get_rawcode();
 
 #ifdef DBG_RAWCODE
