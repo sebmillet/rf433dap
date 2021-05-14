@@ -6,7 +6,7 @@
       "bits":8,"v":0x00000000,"railstatus":"stop received","n":1,
       "b_short":{"inf":186,"mid":248,"sup":310},
       "b_long":{"inf":186,"mid":248,"sup":310},
-      "b_sep":{"inf":1500,"mid":2400,"sup":4800}
+      "b_sep":{"inf":1500,"mid":2400,"sup":65535}
     },
     "r_high":{
       "bits":9,"v":0x00000000,"railstatus":"closed","n":1,

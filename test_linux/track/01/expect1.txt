@@ -28,7 +28,7 @@
       "bits":0,"v":0x00000000,"railstatus":"stop received","n":2,
       "b_short":{"inf":216,"mid":576,"sup":720},
       "b_long":{"inf":810,"mid":1280,"sup":2080},
-      "b_sep":{"inf":4387,"mid":7020,"sup":14040}
+      "b_sep":{"inf":4387,"mid":7020,"sup":65535}
     }
   }
 ]

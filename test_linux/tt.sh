@@ -10,7 +10,7 @@ FAILED=0
 cd ..
 
 START=1
-STOP=2
+STOP=4
 if [ -n "${1:-}" ]; then
     START="$1";
     STOP="$1";
@@ -24,10 +24,14 @@ for ((i=START; i<=STOP; i++)); do
 
     sleep 2
 
-    cd test_linux/track
+    if [ ${i} -eq 1 ] || [ ${i} -eq 2 ]; then
+        cd test_linux/track
+    else
+        cd test_linux/decoder
+    fi
 
     for d in [0-9][0-9]; do
-        inpfile=$(ls "${d}"/code-*)
+        inpfile=$(ls "${d}"/code*)
         tmpout="${d}/tmpout${i}.txt"
         expfile="${d}/expect${i}.txt"
         ./exectest.sh "${inpfile}" "${tmpout}" "${PORT}"

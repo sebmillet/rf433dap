@@ -43,6 +43,17 @@
 #define DBG_SIMULATE
 #define DBG_RAWCODE
 
+#elif TESTPLAN == 3 // TESTPLAN
+
+#define DBG_SIMULATE
+#define DBG_DECODER
+
+#elif TESTPLAN == 4 // TESTPLAN
+
+#define DBG_SIMULATE
+#define DBG_DECODER
+#define DBG_SMALL_RECORDED_T
+
 #else // TESTPLAN
 
 #ifdef TESTPLAN
@@ -56,7 +67,7 @@
 // It is OK to update the below, because if this code is compiled, then we are
 // not in the test plan.
 
-#define DBG_SIMULATE
+//#define DBG_SIMULATE
 //#define DBG_TRACE
 //#define DBG_TIMINGS
 //#define DBG_TRACK
@@ -340,11 +351,12 @@ inline bool Band::init_sep(uint16_t d) {
     dbgf("BSEP> init: %u", d);
 #endif
 
-    uint32_t tmp = d;
-    tmp <<= 1;
-    if (tmp > MAX_SEP_DURATION)
-        tmp = MAX_SEP_DURATION;
-    sup = tmp;
+//    uint32_t tmp = d;
+//    tmp <<= 1;
+//    if (tmp > MAX_SEP_DURATION)
+//        tmp = MAX_SEP_DURATION;
+//    sup = tmp;
+    sup = MAX_DURATION;
     inf = d >> 1;
     inf += (inf >> 2);
     mid = d;
@@ -636,6 +648,14 @@ typedef enum {
     STS_ERROR
 } section_term_status_t;
 
+struct Timings {
+    uint16_t low_short;
+    uint16_t low_long;
+    uint16_t high_short;
+    uint16_t high_long;
+    uint16_t sep;
+};
+
 struct Section {
 //    uint16_t initseq;
     recorded_t low_rec;
@@ -644,7 +664,9 @@ struct Section {
     recorded_t high_rec;
     unsigned char high_bits  :6;
     unsigned char high_bands :2;
-    uint16_t sep;
+
+    Timings t;
+
     section_term_status_t sts;
 };
 
@@ -670,7 +692,7 @@ void RawCode::debug_rawcode() const {
     for (byte i = 0; i < nb_sections; ++i) {
         const Section *psec = &sections[i];
         dbgf("  %02d  %s", i, sts_names[psec->sts]);
-        dbgf("      sep = %u", psec->sep);
+        dbgf("      sep = %u", psec->t.sep);
         dbgf("      low:  [%d] n = %2d, v = 0x" FMTRECORDEDT "",
                       psec->low_bands, psec->low_bits, psec->low_rec);
         dbgf("      high: [%d] n = %2d, v = 0x" FMTRECORDEDT "",
@@ -691,7 +713,7 @@ char buffer[SerialLine::buf_len];
 #ifdef DBG_TIMINGS
 uint16_t sim_timings[150];
 #else
-uint16_t sim_timings[260];
+uint16_t sim_timings[200];
 //uint16_t sim_timings[140];
 #endif
 
@@ -900,15 +922,34 @@ Notations:
 #endif
             Section *psec = &rawcode.sections[rawcode.nb_sections++];
             psec->sts = sts;
-            psec->sep = (sts == STS_SHORT_SEP
-                        || sts == STS_LONG_SEP
-                        || sts == STS_SEP_SEP ? d : 0);
+
+            psec->t.sep = (sts == STS_SHORT_SEP
+                           || sts == STS_LONG_SEP
+                           || sts == STS_SEP_SEP ? d : 0);
+            if (r_low.b_short.test_value(r_high.b_short.mid)
+                    && !r_low.b_short.test_value(r_high.b_long.mid)
+                    && !r_low.b_long.test_value(r_high.b_short.mid)
+                    && r_low.b_long.test_value(r_high.b_long.mid)) {
+                psec->t.low_short = (r_low.b_short.mid + r_high.b_short.mid)
+                                    >> 1;
+                psec->t.low_long = (r_low.b_long.mid + r_high.b_long.mid)
+                                    >> 1;
+                psec->t.high_short = 0;
+                psec->t.high_long = 0;
+            } else {
+                psec->t.low_short = r_low.b_short.mid;
+                psec->t.low_long = r_low.b_long.mid;
+                psec->t.high_short = r_high.b_short.mid;
+                psec->t.high_long = r_high.b_long.mid;
+            }
+
             psec->low_rec = r_low.rec;
             psec->low_bits = r_low.index;
             psec->low_bands = r_low.get_band_count();
             psec->high_rec = r_high.rec;
             psec->high_bits = r_high.index;
             psec->high_bands = r_high.get_band_count();
+
             trk = ((rawcode.nb_sections == MAX_SECTIONS) ? TRK_DATA : TRK_RECV);
 
             if (trk == TRK_RECV) {
@@ -970,43 +1011,129 @@ void Track::track_debug() const {
 #define CONVENTION_0 0
 #define CONVENTION_1 1
 
-typedef enum {
-    SD_SHORT,
-    SD_LONG,
-    SD_OTHER
-} sgn_duration_t;
+enum class Signal {
+    SHORT,
+    LONG,
+    OTHER
+};
 
-#define DEC_ID_RAW_INCONSISTENT 0
-#define DEC_ID_RAW_SYNC         1
-#define DEC_ID_UNKNOWN_CODING   2
-#define DEC_ID_START            3 // Start of enumeration of real decoders
-#define DEC_ID_TRIBIT           3
-#define DEC_ID_TRIBIT_INV       4
-#define DEC_ID_MANCHESTER       5
-#define DEC_ID_END              5 // End of enumeration of real decoders
+#define DEC_ID_RAW_INCONSISTENT   0
+#define DEC_ID_RAW_SYNC           1
+
+#define DEC_ID_START              2 // Start of enumeration of real decoders
+#define DEC_ID_TRIBIT             2
+#define DEC_ID_TRIBIT_INV         3
+#define DEC_ID_MANCHESTER         4
+#define DEC_ID_RAW_UNKNOWN_CODING 5 // At last we use this one, that'll always
+                                    // produce a successful result.
+#define DEC_ID_END                5 // End of enumeration of real decoders
 
 #ifdef DBG_DECODER
 const char *dec_id_names[] = {
-    "INCONSISTENT",
-    "SYNC",
-    "UNKNOWN",
+    "INC",
+    "SYN",
     "TRI",
-    "TRIINV",
-    "MAN"
+    "TRN",
+    "MAN",
+    "UNK"
 };
 #endif
+
+// vector-like of the (very) poor man. No time to make it fancier.
+// It'll simply accept to add a bit at the beginning (add_bit),
+// to get the number of bits and bytes, and access the Nth bit or byte.
+class BitVector {
+    private:
+        uint8_t* array;
+        byte allocated;
+        byte nb_bits;
+    public:
+        BitVector();
+        virtual ~BitVector();
+
+        virtual void add_bit(byte v);
+
+        virtual short get_nb_bits() const;
+        virtual byte get_nb_bytes() const;
+        virtual byte get_nth_bit(byte n) const;
+        virtual byte get_nth_byte(byte n) const;
+};
+
+BitVector::BitVector():
+        array(nullptr),
+        allocated(0),
+        nb_bits(0) {
+
+}
+
+BitVector::~BitVector() {
+    if (array)
+        free(array);
+}
+
+void BitVector::add_bit(byte v) {
+    if (!allocated)
+        array = (uint8_t*)malloc(1);
+    if (nb_bits >= (allocated << 3)) {
+        byte old_allocated = allocated;
+
+        ++allocated;    // Could be another formula ('<<= 1', ...)
+
+        array = (uint8_t*)realloc(array, allocated);
+        for (byte i = old_allocated; i < allocated; ++i)
+            array[i] = 0;
+    }
+
+    ++nb_bits;
+    for (short i = allocated - 1; i >= 0; --i) {
+
+        byte b;
+        if (i > 0) {
+            b = !!(array[i - 1] & 0x80);
+        } else {
+                // Defensive programming:
+                //   Normally v is 0 or 1, but I normalize it, just in case.
+            b = !!v;
+        }
+
+        array[i]= (array[i] << 1) | b;
+
+    }
+}
+
+short BitVector::get_nb_bits() const {
+    return nb_bits;
+}
+
+byte BitVector::get_nb_bytes() const {
+    return (nb_bits + 7) >> 3;
+}
+
+    // Bit numbering starts at 0
+byte BitVector::get_nth_bit(byte n) const {
+    assert(n >= 0 && n < nb_bits);
+    byte index = (n >> 3);
+    byte bitread = (1 << (n & 0x07));
+    return !!(array[index] & bitread);
+}
+
+    // Bit numbering starts at 0
+byte BitVector::get_nth_byte(byte n) const {
+    assert(n >= 0 && n < get_nb_bytes());
+    return array[n];
+}
 
 #define DECODER_NB_BYTES 16
 //#define DECODER_NB_BYTES 6
 
 class Decoder {
     protected:
-        uint8_t data[DECODER_NB_BYTES];
+        BitVector data;
         byte convention;
 
-        byte nb_bits;
         byte nb_errors;
-        bool last_is_error;
+
+        Timings t;
 
         Decoder *next;
 
@@ -1019,26 +1146,31 @@ class Decoder {
 
         static Decoder *build_decoder(byte id);
 
-        virtual void add_sgn_lo_hi(sgn_duration_t low, sgn_duration_t high) = 0;
+        virtual void add_signal_step(Signal low, Signal high) = 0;
+        virtual void add_sync(byte n) { }
         virtual byte get_nb_errors() const;
         virtual byte get_nb_bits() const;
+
+        virtual void set_t(const Timings &arg_t);
 
         virtual void attach_next(Decoder *pdec);
 
 #ifdef DBG_DECODER
-        void output_data() const;
+        virtual void dbg_data(byte seq) const;
+        virtual void dbg_meta(byte disp_level) const;
+        virtual void dbg_decoder(byte disp_level = 1, byte seq = 0) const
+                = 0;
+        virtual void dbg_next(byte disp_level, byte seq) const;
 #endif
 };
 
 Decoder::Decoder(byte arg_convention):
         convention(arg_convention),
-        nb_bits(0),
         nb_errors(0),
-        last_is_error(false),
         next(nullptr)
 {
-    for (byte i = 0; i < DECODER_NB_BYTES; ++i)
-        data[i] = 0;
+//    for (byte i = 0; i < DECODER_NB_BYTES; ++i)
+//        data.at(i) = 0;
 }
 
 Decoder::~Decoder() {
@@ -1052,76 +1184,202 @@ void Decoder::attach_next(Decoder *pdec) {
 }
 
 void Decoder::add_decoded_bit(byte valbit) {
-    if (++nb_bits < (DECODER_NB_BYTES << 3)) {
-        for (int i = DECODER_NB_BYTES - 1; i >= 0; --i) {
-
-            byte b;
-            if (i > 0) {
-                b = !!(data[i - 1] & 0x80);
-            } else {
-                    // Defensive programming
-                    // Normally valbit is 0 or 1, but I normalize it, just in
-                    // case...
-                b = !!valbit;
-            }
-
-            data[i] = (data[i] << 1) | b;
-
-        }
-    }
+    data.add_bit(valbit);
 }
 
 byte Decoder::get_nb_errors() const { return nb_errors; }
 
-byte Decoder::get_nb_bits() const { return nb_bits; }
+byte Decoder::get_nb_bits() const { return data.get_nb_bits(); }
+
+void Decoder::set_t(const Timings &arg_t) {
+    t = arg_t;
+}
 
 #ifdef DBG_DECODER
-void Decoder::output_data() const {
-    if (nb_bits) {
-        byte nb_bytes = (nb_bits + 7) >> 3;
+void Decoder::dbg_data(byte seq) const {
+    if (data.get_nb_bits()) {
+
+        byte nb_bytes = data.get_nb_bytes();
+
         char *buf = new char[nb_bytes * 3];
         char tmp[3];
         int j = 0;
         for (int i = nb_bytes - 1; i >= 0 ; --i) {
-            snprintf(tmp, sizeof(tmp), "%02x", data[i]);
+            snprintf(tmp, sizeof(tmp), "%02x", data.get_nth_byte(i));
             buf[j] = tmp[0];
             buf[j + 1] = tmp[1];
             buf[j + 2] = (i > 0 ? ' ' : '\0');
             j += 3;
         }
         assert(j <= nb_bytes * 3);
-        dbgf("Received %d bits: %s", get_nb_bits(), buf);
+        dbgf("[%d] Received %d bits%s: %s", seq, get_nb_bits(),
+                (get_nb_errors() ? "(!)" : ""), buf);
         delete buf;
+
     } else {
-        dbgf("No data received, type = %s", dec_id_names[get_id()]);
+        dbgf("[%d] No data received, type = %s", seq, dec_id_names[get_id()]);
     }
+}
+
+void Decoder::dbg_meta(byte disp_level) const {
+    if (disp_level <= 1)
+        return;
+    if (!t.high_short && !t.high_long) {
+        dbgf("    T=%s, E=%u, S=%u, L=%u, P=%u", dec_id_names[get_id()],
+                nb_errors, t.low_short, t.low_long, t.sep);
+    } else {
+        dbgf("    T=%s, E=%u, S(lo)=%u, L(lo)=%u, S(hi)=%u, L(hi)=%u, P=%u",
+                dec_id_names[get_id()], nb_errors, t.low_short, t.low_long,
+                t.high_short, t.high_long, t.sep);
+    }
+}
+
+void Decoder::dbg_next(byte disp_level, byte seq) const {
+    if (next)
+        next->dbg_decoder(disp_level, seq + 1);
+}
+
+#endif
+
+
+// * ********************** ***************************************************
+// * DecoderRawInconsistent ***************************************************
+// * ********************** ***************************************************
+
+class DecoderRawInconsistent: public Decoder {
+    public:
+        DecoderRawInconsistent(): Decoder(CONVENTION_0) { }
+        ~DecoderRawInconsistent() { }
+
+        virtual byte get_id() const override { return DEC_ID_RAW_INCONSISTENT; }
+
+        virtual void add_signal_step(Signal lo, Signal hi) override { }
+
+#ifdef DBG_DECODER
+        virtual void dbg_decoder(byte disp_level, byte seq) const override;
+#endif
+};
+
+#ifdef DBG_DECODER
+void DecoderRawInconsistent::dbg_decoder(byte disp_level, byte seq) const {
+    dbgf("[%d] Inconsistent signal", seq);
+    dbg_meta(disp_level);
+    dbg_next(disp_level, seq);
 }
 #endif
 
 
-// * ********** ***************************************************************
-// * DecoderRaw ***************************************************************
-// * ********** ***************************************************************
+// * ************** ***********************************************************
+// * DecoderRawSync ***********************************************************
+// * ************** ***********************************************************
 
-    // This Decoder is 'fake', it won't decode anything, it'll rather record raw
-    // data when signal is no good.
-    // But it is convenient to give it a Decoder interface.
-class DecoderRaw: public Decoder {
+class DecoderRawSync: public Decoder {
     private:
-        byte dec_id_type;
+        byte nb_low_high;
 
     public:
-        DecoderRaw(byte arg_dec_id_type):
+        DecoderRawSync(byte arg_nb_low_high):
                 Decoder(CONVENTION_0),
-                dec_id_type(arg_dec_id_type) {
-        }
-        ~DecoderRaw() { }
+                nb_low_high(arg_nb_low_high) { }
+        ~DecoderRawSync() { }
 
-        virtual byte get_id() const override { return dec_id_type; }
+        virtual byte get_id() const override { return DEC_ID_RAW_SYNC; }
 
-        virtual void add_sgn_lo_hi(sgn_duration_t lo, sgn_duration_t hi)
-            override { }
+        virtual void add_signal_step(Signal lo, Signal hi) override { }
+
+        virtual void add_sync(byte n) override;
+
+#ifdef DBG_DECODER
+        virtual void dbg_decoder(byte disp_level, byte seq) const override;
+#endif
+
 };
+
+void DecoderRawSync::add_sync(byte n) {
+    nb_low_high += n;
+}
+
+#ifdef DBG_DECODER
+void DecoderRawSync::dbg_decoder(byte disp_level, byte seq) const {
+    dbgf("[%d] Sync %d", seq, nb_low_high);
+    dbg_meta(disp_level);
+    dbg_next(disp_level, seq);
+}
+#endif
+
+
+// * *********************** **************************************************
+// * DecoderRawUnknownCoding **************************************************
+// * *********************** **************************************************
+
+class DecoderRawUnknownCoding: public Decoder {
+    private:
+        Signal unused_final_low;
+
+    public:
+        DecoderRawUnknownCoding(): Decoder(CONVENTION_0) { }
+        ~DecoderRawUnknownCoding() { }
+
+        virtual byte get_id() const override
+            { return DEC_ID_RAW_UNKNOWN_CODING; }
+
+        virtual void add_signal_step(Signal lo, Signal hi) override;
+
+#ifdef DBG_DECODER
+        virtual void dbg_decoder(byte disp_level, byte seq) const override;
+#endif
+
+};
+
+void DecoderRawUnknownCoding::add_signal_step(Signal lo, Signal hi) {
+        // See [COMMENT001]
+    if (hi == Signal::OTHER) {
+        unused_final_low = lo;
+        return;
+    }
+
+    for (short i = 0; i < 2; ++i) {
+        Signal x = (i ? hi : lo);
+        add_decoded_bit(x == Signal::SHORT ? 0 : 1);
+    }
+}
+
+#ifdef DBG_DECODER
+void DecoderRawUnknownCoding::dbg_decoder(byte disp_level, byte seq) const {
+    dbgf("[%d] Unknown encoding: %d signal bits", seq, data.get_nb_bits());
+
+    if (disp_level <= 1)
+        return;
+
+    int n = data.get_nb_bits();
+    assert(!(n & 1));
+
+    int sz = ((int)n * 3) / 2 + 4;
+    char *buf = new char[sz];
+    int p = 0;
+    for (int i = n - 1; i >= 1; i -= 2) {
+        byte vlo = data.get_nth_bit(i);
+        byte vhi = data.get_nth_bit(i - 1);
+        buf[p] = (vlo ? 'L' : 'S');
+        buf[p + 1] = (vhi ? 'L' : 'S');
+        buf[p + 2] = ':';
+        p += 3;
+    }
+    assert(p + 2 < sz);
+    if (unused_final_low == Signal::SHORT)
+        buf[p] = 'S';
+    else
+        buf[p] = 'L';
+    buf[p + 1] = 'P';
+    buf[p + 2] = '\0';
+    dbgf("    Signal: %s", buf);
+    delete buf;
+
+    dbg_meta(disp_level);
+
+    dbg_next(disp_level, seq);
+}
+#endif
 
 
 // * ************* ************************************************************
@@ -1130,7 +1388,7 @@ class DecoderRaw: public Decoder {
 
 class DecoderTriBit: public Decoder {
     private:
-        sgn_duration_t unused_final_low;
+        Signal unused_final_low;
 
     public:
         DecoderTriBit(byte arg_convention = CONVENTION_0)
@@ -1139,34 +1397,45 @@ class DecoderTriBit: public Decoder {
         ~DecoderTriBit() { }
 
         virtual byte get_id() const override { return DEC_ID_TRIBIT; }
-        virtual void add_sgn_lo_hi(sgn_duration_t low, sgn_duration_t high)
+        virtual void add_signal_step(Signal low, Signal high)
             override;
+
+#ifdef DBG_DECODER
+        virtual void dbg_decoder(byte disp_level, byte seq) const override;
+#endif
+
 };
 
-void DecoderTriBit::add_sgn_lo_hi(sgn_duration_t lo, sgn_duration_t hi) {
-    last_is_error = false;
-
+void DecoderTriBit::add_signal_step(Signal lo, Signal hi) {
+        // [COMMENT001]
         // The below case corresponds to the reception of (short, sep) or (high,
         // sep), meaning, the low signal is meaningful whereas the high signal
         // has no encoding meaning.
-    if (hi == SD_OTHER) {
+    if (hi == Signal::OTHER) {
         unused_final_low = lo;
         return;
     }
 
     byte valbit;
-    if (lo == SD_SHORT && hi == SD_LONG)
+    if (lo == Signal::SHORT && hi == Signal::LONG)
         valbit = convention;
-    else if (lo == SD_LONG && hi == SD_SHORT)
+    else if (lo == Signal::LONG && hi == Signal::SHORT)
         valbit = !convention;
     else {
         ++nb_errors;
-        last_is_error = true;
+        return;
     }
 
-    if (!last_is_error)
-        add_decoded_bit(valbit);
+    add_decoded_bit(valbit);
 }
+
+#ifdef DBG_DECODER
+void DecoderTriBit::dbg_decoder(byte disp_level, byte seq) const {
+    dbg_data(seq);
+    dbg_meta(disp_level);
+    dbg_next(disp_level, seq);
+}
+#endif
 
 
 // * **************** *********************************************************
@@ -1176,8 +1445,8 @@ void DecoderTriBit::add_sgn_lo_hi(sgn_duration_t lo, sgn_duration_t hi) {
 class DecoderTriBitInv: public Decoder {
     private:
         bool first_call_to_add_sgn_lo_hi;
-        sgn_duration_t unused_initial_low;
-        sgn_duration_t last_hi;
+        Signal unused_initial_low;
+        Signal last_hi;
 
     public:
         DecoderTriBitInv(byte arg_convention = CONVENTION_0)
@@ -1187,14 +1456,16 @@ class DecoderTriBitInv: public Decoder {
         ~DecoderTriBitInv() { }
 
         virtual byte get_id() const override { return DEC_ID_TRIBIT_INV; }
-        virtual void add_sgn_lo_hi(sgn_duration_t low, sgn_duration_t high)
+        virtual void add_signal_step(Signal low, Signal high)
             override;
+
+#ifdef DBG_DECODER
+        virtual void dbg_decoder(byte disp_level, byte seq) const override;
+#endif
+
 };
 
-void DecoderTriBitInv::add_sgn_lo_hi(sgn_duration_t lo, sgn_duration_t hi) {
-
-    last_is_error = false;
-
+void DecoderTriBitInv::add_signal_step(Signal lo, Signal hi) {
     if (first_call_to_add_sgn_lo_hi) {
         first_call_to_add_sgn_lo_hi = false;
         unused_initial_low = lo;
@@ -1202,21 +1473,30 @@ void DecoderTriBitInv::add_sgn_lo_hi(sgn_duration_t lo, sgn_duration_t hi) {
         return;
     }
 
+    bool add_it = true;
     byte valbit;
-    if (lo == SD_SHORT && last_hi == SD_LONG)
+    if (lo == Signal::SHORT && last_hi == Signal::LONG)
         valbit = !convention;
-    else if (lo == SD_LONG && last_hi == SD_SHORT)
+    else if (lo == Signal::LONG && last_hi == Signal::SHORT)
         valbit = convention;
     else {
         ++nb_errors;
-        last_is_error = true;
+        add_it = false;
     }
 
-    if (!last_is_error)
+    if (add_it)
         add_decoded_bit(valbit);
 
     last_hi = hi;
 }
+
+#ifdef DBG_DECODER
+void DecoderTriBitInv::dbg_decoder(byte disp_level, byte seq) const {
+    dbg_data(seq);
+    dbg_meta(disp_level);
+    dbg_next(disp_level, seq);
+}
+#endif
 
 
 // * ***************** ********************************************************
@@ -1236,8 +1516,13 @@ class DecoderManchester: public Decoder {
         ~DecoderManchester() { }
 
         virtual byte get_id() const override { return DEC_ID_MANCHESTER; }
-        virtual void add_sgn_lo_hi(sgn_duration_t low, sgn_duration_t high)
+        virtual void add_signal_step(Signal low, Signal high)
             override;
+
+#ifdef DBG_DECODER
+        virtual void dbg_decoder(byte disp_level, byte seq) const override;
+#endif
+
 };
 
 DecoderManchester::DecoderManchester(byte arg_convention)
@@ -1253,7 +1538,6 @@ void DecoderManchester::add_buf(byte r) {
 }
 
 void DecoderManchester::consume_buf() {
-    last_is_error = false;
     if (buf_pos >= 2) {
         if (buf[0] == 0 && buf[1] == 1) {
             add_decoded_bit(convention);
@@ -1263,7 +1547,6 @@ void DecoderManchester::consume_buf() {
                 // FIXME: créer register_error pour gérer ça de manière
                 // cohérente entre les différents descendants de Decoder.
             ++nb_errors;
-            last_is_error = true;
         }
             // Not always necessary, but harmless if done while not necessary
         buf[0] = buf[2];
@@ -1271,27 +1554,47 @@ void DecoderManchester::consume_buf() {
     }
 }
 
-void DecoderManchester::add_sgn_lo_hi(sgn_duration_t lo, sgn_duration_t hi) {
-    if (lo == SD_OTHER) {
+void DecoderManchester::add_signal_step(Signal lo, Signal hi) {
+    if (lo == Signal::OTHER) {
         ++nb_errors;
-        last_is_error = true;
         return;
     }
 
     for (byte i = 0; i < 2; ++i) {
-        sgn_duration_t sgn = (i == 0 ? lo : hi);
+        Signal sgn = (i == 0 ? lo : hi);
         add_buf(i);
-        if (sgn == SD_LONG)
+        if (sgn == Signal::LONG)
             add_buf(i);
         consume_buf();
     }
 }
 
+#ifdef DBG_DECODER
+void DecoderManchester::dbg_decoder(byte disp_level, byte seq) const {
+    dbg_data(seq);
+    dbg_meta(disp_level);
+    dbg_next(disp_level, seq);
+}
+#endif
+
+
+// * ********************** ***************************************************
+// * Decoder::build_decoder ***************************************************
+// * ********************** ***************************************************
+
+// Must be located here, so that classes are defined
+// FIXME?
+//   If using .h / .cpp, there'd be no need to organize code in this weird way.
 Decoder* Decoder::build_decoder(byte id) {
     switch (id) {
-        case DEC_ID_TRIBIT:     return new DecoderTriBit();
-        case DEC_ID_TRIBIT_INV: return new DecoderTriBitInv();
-        case DEC_ID_MANCHESTER: return new DecoderManchester();
+        case DEC_ID_TRIBIT:
+            return new DecoderTriBit();
+        case DEC_ID_TRIBIT_INV:
+            return new DecoderTriBitInv();
+        case DEC_ID_MANCHESTER:
+            return new DecoderManchester();
+        case DEC_ID_RAW_UNKNOWN_CODING:
+            return new DecoderRawUnknownCoding();
         default:
             assert(false);
     }
@@ -1483,7 +1786,6 @@ Decoder* decode_rawcode(const RawCode *raw) {
     for (byte i = 0; i < raw->nb_sections; ++i) {
 
         const Section *psec = &raw->sections[i];
-        bool forward_pdec;
 
         if (abs(psec->low_bits - psec->high_bits) >= 2) {
                 // Defensive programming (should never happen).
@@ -1491,15 +1793,20 @@ Decoder* decode_rawcode(const RawCode *raw) {
                 // submitted values (as argument to track_eat()) switch between
                 // 0 and 1, so that low and high rails are populated equally.
             assert(false);
+
         } else if (psec->low_bands == 1 && psec->high_bands == 1) {
-            assert(!pdec);
-            pdec = new DecoderRaw(DEC_ID_RAW_SYNC);
-            forward_pdec = true;
+            byte n = (psec->low_bits < psec->high_bits ?
+                      psec->low_bits : psec->high_bits);
+            if (pdec) {
+                pdec->add_sync(n);
+            } else {
+                pdec = new DecoderRawSync(n);
+            }
 
         } else if (psec->low_bands == 1 || psec->high_bands == 1) {
-            assert(!pdec);
-            pdec = new DecoderRaw(DEC_ID_RAW_INCONSISTENT);
-            forward_pdec = true;
+            if (!pdec) {
+                pdec = new DecoderRawInconsistent();
+            }
 
         } else {
             byte enum_decoders = DEC_ID_START;
@@ -1512,20 +1819,20 @@ Decoder* decode_rawcode(const RawCode *raw) {
                 byte pos_high = psec->high_bits;
 
                 while (pos_low >= 1 || pos_high >= 1) {
-                    sgn_duration_t sd_low = SD_OTHER;
-                    sgn_duration_t sd_high = SD_OTHER;
+                    Signal sd_low = Signal::OTHER;
+                    Signal sd_high = Signal::OTHER;
                     if (pos_low >= 1) {
                         --pos_low;
                         sd_low = ((((recorded_t)1 << pos_low) & psec->low_rec) ?
-                                    SD_LONG : SD_SHORT);
+                                    Signal::LONG : Signal::SHORT);
                     }
                     if (pos_high >= 1) {
                         --pos_high;
                         sd_high =
                             ((((recorded_t)1 << pos_high) & psec->high_rec) ?
-                            SD_LONG : SD_SHORT);
+                            Signal::LONG : Signal::SHORT);
                     }
-                    pdec->add_sgn_lo_hi(sd_low, sd_high);
+                    pdec->add_signal_step(sd_low, sd_high);
                 }
                 if (!is_continuation_of_prev_section && pdec->get_nb_errors()) {
                     delete pdec;
@@ -1533,16 +1840,18 @@ Decoder* decode_rawcode(const RawCode *raw) {
                 }
             } while (!pdec && ++enum_decoders <= DEC_ID_END);
 
-            if (!pdec)
-                pdec = new DecoderRaw(DEC_ID_UNKNOWN_CODING);
-
-            forward_pdec = (psec->sts != STS_CONTINUED);
         }
+        assert(pdec);
 
-#ifdef DBG_DECODER
-//        dbgf("code = %s", code_names[code]);
-#endif
-        if (forward_pdec) {
+            // FIXME
+//        dbgf("pdec->get_id() = %d, nb_errors = %d, nb_bits = %d", pdec->get_id(),
+//                pdec->get_nb_errors(), pdec->get_nb_bits());
+//        dbgf("pdec_head = 0x%lx", (long unsigned)pdec_head);
+//        dbgf("pdec_tail = 0x%lx", (long unsigned)pdec_tail);
+
+        pdec->set_t(psec->t);
+
+        if (psec->sts != STS_CONTINUED || i == raw->nb_sections - 1) {
             if (!pdec_head) {
                 assert(!pdec_tail);
                 pdec_head = pdec;
@@ -1555,6 +1864,7 @@ Decoder* decode_rawcode(const RawCode *raw) {
             pdec = nullptr;
         }
     }
+
     return pdec_head;
 }
 
@@ -1604,7 +1914,7 @@ void loop() {
     Decoder *pdec = decode_rawcode(praw);
     if (pdec) {
 #ifdef DBG_DECODER
-        pdec->output_data();
+        pdec->dbg_decoder(2);
 #endif
         delete pdec;
     }
@@ -1636,7 +1946,16 @@ void loop() {
     praw->debug_rawcode();
 #endif
 
-    decode_rawcode(praw);
+    Decoder *pdec = decode_rawcode(praw);
+    if (pdec) {
+        dbg("mark a"); // FIXME
+#ifdef DBG_DECODER
+        pdec->dbg_decoder(2);
+#endif
+        delete pdec;
+    } else {
+        dbg("mark b"); // FIXME
+    }
 
 #endif // DBG_SIMULATE
 

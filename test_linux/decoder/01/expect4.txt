@@ -1,0 +1,2 @@
+[0] Received 9 bits: 01 6e
+    T=TRI, E=0, S=556, L=1258, P=7020

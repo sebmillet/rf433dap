@@ -12,7 +12,7 @@
       "bits":8,"v":0x00000000,"railstatus":"stop received","n":1,
       "b_short":{"inf":375,"mid":500,"sup":625},
       "b_long":{"inf":375,"mid":500,"sup":625},
-      "b_sep":{"inf":2417,"mid":3868,"sup":7736}
+      "b_sep":{"inf":2417,"mid":3868,"sup":65535}
     }
   }
 ,
@@ -23,13 +23,13 @@
       "bits":8,"v":0x00000008,"railstatus":"stop received","n":2,
       "b_short":{"inf":93,"mid":249,"sup":311},
       "b_long":{"inf":349,"mid":400,"sup":650},
-      "b_sep":{"inf":587,"mid":940,"sup":1880}
+      "b_sep":{"inf":587,"mid":940,"sup":65535}
     },
     "r_high":{
       "bits":8,"v":0x00000000,"railstatus":"stop received","n":1,
       "b_short":{"inf":375,"mid":500,"sup":625},
       "b_long":{"inf":375,"mid":500,"sup":625},
-      "b_sep":{"inf":2417,"mid":3868,"sup":7736}
+      "b_sep":{"inf":2417,"mid":3868,"sup":65535}
     }
   }
 ,
@@ -40,7 +40,7 @@
       "bits":8,"v":0x0000000e,"railstatus":"stop received","n":2,
       "b_short":{"inf":93,"mid":249,"sup":311},
       "b_long":{"inf":349,"mid":400,"sup":650},
-      "b_sep":{"inf":587,"mid":940,"sup":1880}
+      "b_sep":{"inf":587,"mid":940,"sup":65535}
     },
     "r_high":{
       "bits":8,"v":0x00000000,"railstatus":"error","n":1,
@@ -57,7 +57,7 @@
       "bits":8,"v":0x00000002,"railstatus":"stop received","n":2,
       "b_short":{"inf":93,"mid":249,"sup":311},
       "b_long":{"inf":349,"mid":400,"sup":650},
-      "b_sep":{"inf":562,"mid":900,"sup":1800}
+      "b_sep":{"inf":562,"mid":900,"sup":65535}
     },
     "r_high":{
       "bits":9,"v":0x00000000,"railstatus":"closed","n":1,
@@ -74,7 +74,7 @@
       "bits":8,"v":0x00000000,"railstatus":"stop received","n":1,
       "b_short":{"inf":186,"mid":247,"sup":308},
       "b_long":{"inf":186,"mid":247,"sup":308},
-      "b_sep":{"inf":1250,"mid":2000,"sup":4000}
+      "b_sep":{"inf":1250,"mid":2000,"sup":65535}
     },
     "r_high":{
       "bits":9,"v":0x00000001,"railstatus":"closed","n":2,
