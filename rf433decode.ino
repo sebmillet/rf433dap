@@ -1706,44 +1706,6 @@ bool process_interrupt_timing(Track *ptrack) {
 // * Execution ****************************************************************
 // * ********* ****************************************************************
 
-#ifdef DBG_SIMULATE
-void read_simulated_timings_from_usb() {
-    sim_timings_count = 0;
-    sim_int_count = 0;
-    counter = 0;
-    buffer[0] = '\0';
-    for (   ;
-            strcmp(buffer, ".");
-            sl.get_line_blocking(buffer, sizeof(buffer))
-        ) {
-
-        if (!strlen(buffer))
-            continue;
-
-        char *p = buffer;
-        while (*p != ',' && *p != '\0')
-            ++p;
-        if (*p != ',') {
-            dbg("FATAL: each line must have a ',' character!");
-            assert(false);
-        }
-
-        *p = '\0';
-        unsigned int l = atoi(buffer);
-        unsigned int h = atoi(p + 1);
-
-        if (sim_timings_count >=
-                sizeof(sim_timings) / sizeof(*sim_timings) - 1) {
-            dbg("FATAL: timings buffer full!");
-            assert(false);
-        }
-
-        sim_timings[sim_timings_count++] = l;
-        sim_timings[sim_timings_count++] = h;
-    }
-}
-#endif
-
 void setup() {
     pinMode(PIN_RFINPUT, INPUT);
     Serial.begin(115200);
@@ -1836,9 +1798,44 @@ Decoder* decode_rawcode(const RawCode *raw) {
     return pdec_head;
 }
 
-void loop() {
-
 #ifdef DBG_SIMULATE
+void read_simulated_timings_from_usb() {
+    sim_timings_count = 0;
+    sim_int_count = 0;
+    counter = 0;
+    buffer[0] = '\0';
+    for (   ;
+            strcmp(buffer, ".");
+            sl.get_line_blocking(buffer, sizeof(buffer))
+        ) {
+
+        if (!strlen(buffer))
+            continue;
+
+        char *p = buffer;
+        while (*p != ',' && *p != '\0')
+            ++p;
+        if (*p != ',') {
+            dbg("FATAL: each line must have a ',' character!");
+            assert(false);
+        }
+
+        *p = '\0';
+        unsigned int l = atoi(buffer);
+        unsigned int h = atoi(p + 1);
+
+        if (sim_timings_count >=
+                sizeof(sim_timings) / sizeof(*sim_timings) - 1) {
+            dbg("FATAL: timings buffer full!");
+            assert(false);
+        }
+
+        sim_timings[sim_timings_count++] = l;
+        sim_timings[sim_timings_count++] = h;
+    }
+}
+
+void loop() {
     if (sim_int_count >= sim_timings_count)
         read_simulated_timings_from_usb();
 
@@ -1888,11 +1885,16 @@ void loop() {
     if (sim_int_count >= sim_timings_count) {
         dbg("----- END TEST -----");
     }
+}
+#endif // DBG_SIMULATE
 
-#else // !defined(DBG_SIMULATE)
-
+#ifndef DBG_SIMULATE
+void loop() {
     dbg("Waiting for signal");
     track.treset();
+    dbgf("sizeof(track) = %u", sizeof(track));
+    dbgf("sizeof(RawCode) = %u", sizeof(RawCode));
+    dbgf("sizeof(Section) = %u", sizeof(Section));
 
     attachInterrupt(INT_RFINPUT, &handle_interrupt, CHANGE);
     while (track.get_trk() != TRK_DATA) {
@@ -1903,14 +1905,8 @@ void loop() {
     }
     detachInterrupt(INT_RFINPUT);
 
-#ifdef DBG_RAWCODE
     dbgf("IH_max_pending_timings = %d", IH_max_pending_timings);
-#endif
     const RawCode *praw = track.get_rawcode();
-
-#ifdef DBG_RAWCODE
-    praw->debug_rawcode();
-#endif
 
     Decoder *pdec = decode_rawcode(praw);
     if (pdec) {
@@ -1920,15 +1916,14 @@ void loop() {
         delete pdec;
     }
 
-#endif // DBG_SIMULATE
-
 #ifdef DBG_TIMINGS
     for (unsigned int i = 0; i + 1 < ih_dbg_pos; i += 2) {
         dbgf("%4u, %4u  |  %5u, %5u", ih_dbg_timings[i], ih_dbg_timings[i + 1],
              ih_dbg_exec[i], ih_dbg_exec[i + 1]);
     }
 #endif
-
 }
+
+#endif // !DBG_SIMULATE
 
 // vim: ts=4:sw=4:tw=80:et

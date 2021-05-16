@@ -1,4 +1,4 @@
-[0] Received 8 bits: b5
-    T=TRI, E=0, I=6908, S=542, L=1274, P=0
 [0] Received 32 bits: b5 35 6d 00
-    T=TRI, E=0, I=7036, S(lo)=484, L(lo)=1152, S(hi)=608, L(hi)=1272, P=6984
+    T=TRI, E=0, I=6908, S=542, L=1274, P=7036
+[1] Received 32 bits: b5 35 6d 00
+    T=TRI, E=0, I=0, S=542, L=1274, P=6984
