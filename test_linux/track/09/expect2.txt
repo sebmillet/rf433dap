@@ -1,5 +1,5 @@
 IH_max_pending_timings = 11
-> nb_sections = 7, initseq = 8484
+> nb_sections = 5, initseq = 8484
   00  SSEP
       sep = 24028
       low:  [2] n = 13, v = 0x00000d1a
@@ -20,13 +20,3 @@ IH_max_pending_timings = 11
       sep = 24040
       low:  [2] n = 13, v = 0x00000aaa
       high: [2] n = 12, v = 0x00000555
-  05  SSEP
-      sep = 24040
-      low:  [2] n = 13, v = 0x00000aaa
-      high: [2] n = 12, v = 0x00000555
-  06  SSEP
-      sep = 27244
-      low:  [2] n = 13, v = 0x00000aaa
-      high: [2] n = 12, v = 0x00000555
-IH_max_pending_timings = 11
-> nb_sections = 0, initseq = 0

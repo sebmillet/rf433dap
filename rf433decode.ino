@@ -648,7 +648,6 @@ struct Timings {
 };
 
 struct Section {
-//    uint16_t initseq;
     recorded_t low_rec;
     unsigned char low_bits   :6;
     unsigned char low_bands  :2;
@@ -701,12 +700,7 @@ void RawCode::debug_rawcode() const {
 SerialLine sl;
 char buffer[SerialLine::buf_len];
 
-#ifdef DBG_TIMINGS
 uint16_t sim_timings[150];
-#else
-uint16_t sim_timings[200];
-//uint16_t sim_timings[140];
-#endif
 
 uint16_t sim_timings_count = 0;
 
@@ -1101,6 +1095,7 @@ class Decoder {
 
         byte nb_errors;
 
+        uint16_t initseq;
         Timings t;
 
         Decoder *next;
@@ -1119,7 +1114,7 @@ class Decoder {
         virtual byte get_nb_errors() const;
         virtual byte get_nb_bits() const;
 
-        virtual void set_t(const Timings &arg_t);
+        virtual void set_t(const uint16_t& arg_initseq, const Timings& arg_t);
 
         virtual void attach_next(Decoder *pdec);
 
@@ -1135,6 +1130,7 @@ class Decoder {
 Decoder::Decoder(byte arg_convention):
         convention(arg_convention),
         nb_errors(0),
+        initseq(0),
         next(nullptr) {
 
 }
@@ -1157,7 +1153,8 @@ byte Decoder::get_nb_errors() const { return nb_errors; }
 
 byte Decoder::get_nb_bits() const { return data.get_nb_bits(); }
 
-void Decoder::set_t(const Timings &arg_t) {
+void Decoder::set_t(const uint16_t& arg_initseq, const Timings& arg_t) {
+    initseq = arg_initseq;
     t = arg_t;
 }
 
@@ -1191,12 +1188,12 @@ void Decoder::dbg_meta(byte disp_level) const {
     if (disp_level <= 1)
         return;
     if (!t.high_short && !t.high_long) {
-        dbgf("    T=%s, E=%u, S=%u, L=%u, P=%u", dec_id_names[get_id()],
-                nb_errors, t.low_short, t.low_long, t.sep);
+        dbgf("    T=%s, E=%u, I=%u, S=%u, L=%u, P=%u", dec_id_names[get_id()],
+                nb_errors, initseq, t.low_short, t.low_long, t.sep);
     } else {
-        dbgf("    T=%s, E=%u, S(lo)=%u, L(lo)=%u, S(hi)=%u, L(hi)=%u, P=%u",
-                dec_id_names[get_id()], nb_errors, t.low_short, t.low_long,
-                t.high_short, t.high_long, t.sep);
+        dbgf("    T=%s, E=%u, I=%u, S(lo)=%u, L(lo)=%u, S(hi)=%u, L(hi)=%u, P=%u",
+                dec_id_names[get_id()], nb_errors, initseq,
+                t.low_short, t.low_long, t.high_short, t.high_long, t.sep);
     }
 }
 
@@ -1819,7 +1816,7 @@ Decoder* decode_rawcode(const RawCode *raw) {
         }
         assert(pdec);
 
-        pdec->set_t(psec->t);
+        pdec->set_t((pdec_head ? 0 : raw->initseq), psec->t);
 
         if (psec->sts != STS_CONTINUED || i == raw->nb_sections - 1) {
             if (!pdec_head) {
@@ -1839,8 +1836,6 @@ Decoder* decode_rawcode(const RawCode *raw) {
 }
 
 void loop() {
-
-//    initialize_veryrecent();
 
 #ifdef DBG_SIMULATE
     if (sim_int_count >= sim_timings_count)

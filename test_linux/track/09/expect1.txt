@@ -1,6 +1,6 @@
 [
   {
-    "N":198,"start":0,"end":29,
+    "N":138,"start":0,"end":29,
     "trk":TRK_RECV,"xorval":0x00000b97,
     "r_low":{
       "bits":13,"v":0x00000d1a,"railstatus":"closed","n":2,
@@ -16,7 +16,7 @@
     }
   }
   {
-    "N":198,"start":0,"end":59,
+    "N":138,"start":0,"end":59,
     "trk":TRK_RECV,"xorval":0x00000fff,
     "r_low":{
       "bits":13,"v":0x00000aaa,"railstatus":"closed","n":2,
@@ -32,7 +32,7 @@
     }
   }
   {
-    "N":198,"start":0,"end":83,
+    "N":138,"start":0,"end":83,
     "trk":TRK_RECV,"xorval":0x00000fff,
     "r_low":{
       "bits":13,"v":0x00000aaa,"railstatus":"closed","n":2,
@@ -48,7 +48,7 @@
     }
   }
   {
-    "N":198,"start":0,"end":107,
+    "N":138,"start":0,"end":107,
     "trk":TRK_RECV,"xorval":0x00000fff,
     "r_low":{
       "bits":13,"v":0x00000aaa,"railstatus":"closed","n":2,
@@ -64,39 +64,7 @@
     }
   }
   {
-    "N":198,"start":0,"end":137,
-    "trk":TRK_RECV,"xorval":0x00000fff,
-    "r_low":{
-      "bits":13,"v":0x00000aaa,"railstatus":"closed","n":2,
-      "b_short":{"inf":228,"mid":608,"sup":760},
-      "b_long":{"inf":855,"mid":1292,"sup":2099},
-      "b_sep":{"inf":0,"mid":0,"sup":0}
-    },
-    "r_high":{
-      "bits":12,"v":0x00000555,"railstatus":"stop received","n":2,
-      "b_short":{"inf":272,"mid":724,"sup":905},
-      "b_long":{"inf":1018,"mid":1396,"sup":2268},
-      "b_sep":{"inf":15017,"mid":24028,"sup":65535}
-    }
-  }
-  {
-    "N":198,"start":0,"end":161,
-    "trk":TRK_RECV,"xorval":0x00000fff,
-    "r_low":{
-      "bits":13,"v":0x00000aaa,"railstatus":"closed","n":2,
-      "b_short":{"inf":228,"mid":608,"sup":760},
-      "b_long":{"inf":855,"mid":1292,"sup":2099},
-      "b_sep":{"inf":0,"mid":0,"sup":0}
-    },
-    "r_high":{
-      "bits":12,"v":0x00000555,"railstatus":"stop received","n":2,
-      "b_short":{"inf":272,"mid":724,"sup":905},
-      "b_long":{"inf":1018,"mid":1396,"sup":2268},
-      "b_sep":{"inf":15017,"mid":24028,"sup":65535}
-    }
-  }
-  {
-    "N":198,"start":0,"end":185,
+    "N":138,"start":0,"end":137,
     "trk":TRK_RECV,"xorval":0x00000fff,
     "r_low":{
       "bits":13,"v":0x00000aaa,"railstatus":"closed","n":2,

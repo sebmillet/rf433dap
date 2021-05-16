@@ -1,8 +1,8 @@
 [0] Sync 11
-    T=SYN, E=0, S(lo)=356, L(lo)=356, S(hi)=364, L(hi)=364, P=3724
+    T=SYN, E=0, I=14916, S(lo)=356, L(lo)=356, S(hi)=364, L(hi)=364, P=3724
 [1] Received 33 bits: 01 42 3c 68 c0
-    T=TRI, E=0, S=360, L=734, P=15284
+    T=TRI, E=0, I=0, S=360, L=734, P=15284
 [2] Sync 11
-    T=SYN, E=0, S=360, L=734, P=3740
-[3] Received 24 bits: a1 1e 34
-    T=TRI, E=0, S=360, L=734, P=0
+    T=SYN, E=0, I=0, S=360, L=734, P=3740
+[3] Received 9 bits: 01 42
+    T=TRI, E=0, I=0, S=360, L=734, P=3740

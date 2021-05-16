@@ -1,4 +1,4 @@
 [0] Received 33 bits: 00 fe dc 56 78
-    T=MAN, E=0, S=1142, L=2314, P=6716
+    T=MAN, E=0, I=5468, S=1142, L=2314, P=6716
 [1] Received 33 bits: 00 fe dc 56 78
-    T=MAN, E=0, S=1142, L=2314, P=6732
+    T=MAN, E=0, I=0, S=1142, L=2314, P=6732

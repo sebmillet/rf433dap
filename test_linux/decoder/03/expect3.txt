@@ -1,2 +1,2 @@
 [0] Received 32 bits: b5 35 6d 00
-    T=TRI, E=0, S(lo)=484, L(lo)=1152, S(hi)=608, L(hi)=1272, P=6984
+    T=TRI, E=0, I=7036, S(lo)=484, L(lo)=1152, S(hi)=608, L(hi)=1272, P=6984
