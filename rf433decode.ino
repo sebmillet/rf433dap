@@ -48,6 +48,7 @@
 #define DBG_SIMULATE
 #define DBG_DECODER
 #define DBG_SMALL_RECORDED_T
+#define MAX_SECTIONS 12
 
 #else // TESTPLAN
 
@@ -106,8 +107,9 @@ static void assert_failed(int line) {
 
 #define MAX_DURATION     65535
 #define MAX_SEP_DURATION 65535
-
-#define MAX_SECTIONS 12
+#ifndef MAX_SECTIONS
+#define MAX_SECTIONS     8
+#endif
 
 
 #ifdef DBG_SIMULATE
@@ -416,6 +418,8 @@ inline bool Band::test_value(uint16_t d) {
 // * Rail *********************************************************************
 // * **** *********************************************************************
 
+#ifdef DBG_SIMULATE
+
 #ifdef DBG_SMALL_RECORDED_T
 
 typedef uint8_t recorded_t;
@@ -427,6 +431,13 @@ typedef uint32_t recorded_t;
 #define FMTRECORDEDT "%08lx"
 
 #endif // DBG_SMALL_RECORDED_T
+
+#else // DBG_SIMULATE
+
+typedef uint16_t recorded_t;
+#define FMTRECORDEDT "%04lx"
+
+#endif
 
 #define RAIL_OPEN     0
 #define RAIL_FULL     1
@@ -2003,7 +2014,7 @@ void loop() {
     Decoder *pdec = track.get_decoded_data();
     if (pdec) {
 #ifdef DBG_DECODER
-        pdec->dbg_decoder(2);
+        pdec->dbg_decoder(1);
 #endif
         delete pdec;
     }
