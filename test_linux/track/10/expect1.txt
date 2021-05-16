@@ -79,4 +79,20 @@
       "b_sep":{"inf":2352,"mid":3764,"sup":65535}
     }
   }
+  {
+    "N":200,"start":0,"end":200,
+    "trk":TRK_RECV,"xorval":0x000001ff,
+    "r_low":{
+      "bits":9,"v":0x000001b3,"railstatus":"error","n":2,
+      "b_short":{"inf":114,"mid":304,"sup":380},
+      "b_long":{"inf":427,"mid":676,"sup":1098},
+      "b_sep":{"inf":0,"mid":0,"sup":0}
+    },
+    "r_high":{
+      "bits":9,"v":0x0000004c,"railstatus":"error","n":2,
+      "b_short":{"inf":156,"mid":416,"sup":520},
+      "b_long":{"inf":585,"mid":788,"sup":1280},
+      "b_sep":{"inf":2352,"mid":3764,"sup":65535}
+    }
+  }
 ]

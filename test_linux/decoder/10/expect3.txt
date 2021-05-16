@@ -1,0 +1,4 @@
+[0] Received 33 bits: 00 7e dc 56 78
+    T=MAN, E=0, S=1162, L=2270, P=6724
+[1] Received 33 bits: 00 7e dc 56 78
+    T=MAN, E=0, S=1162, L=2270, P=6740

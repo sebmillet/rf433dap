@@ -1,0 +1,6 @@
+[0] Received 33 bits: 00 8e dc 56 7f
+    T=MAN, E=0, S=1166, L=2306, P=5576
+[1] Received 33 bits: 00 8e dc 56 7f
+    T=MAN, E=0, S=1166, L=2306, P=5584
+[2] Received 22 bits: 11 db 8a
+    T=MAN, E=0, S=1166, L=2306, P=0

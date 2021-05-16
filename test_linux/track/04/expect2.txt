@@ -1,4 +1,4 @@
-IH_max_pending_timings = 7
+IH_max_pending_timings = 11
 > nb_sections = 1, initseq = 15000
   00  SSEP
       sep = 3868

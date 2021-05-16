@@ -1,0 +1,6 @@
+[0] Received 23 bits(!): 5c 8d 24
+    T=TRI, E=1, S=370, L=1052, P=10664
+[1] Received 24 bits: b9 4d 24
+    T=TRI, E=0, S=370, L=1052, P=10688
+[2] Received 16 bits: b9 4d
+    T=TRI, E=0, S=370, L=1052, P=0

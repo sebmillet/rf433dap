@@ -28,8 +28,6 @@
 #define INT_RFINPUT  (digitalPinToInterrupt(PIN_RFINPUT))
 // END SCHEMATIC CONSTANTS
 
-#include "debug.h"
-
 #include <Arduino.h>
 #include <avr/sleep.h>
 
@@ -67,12 +65,12 @@
 // It is OK to update the below, because if this code is compiled, then we are
 // not in the test plan.
 
-//#define DBG_SIMULATE
+#define DBG_SIMULATE
 //#define DBG_TRACE
 //#define DBG_TIMINGS
 //#define DBG_TRACK
 //#define DBG_RAWCODE
-#define DBG_DECODER
+//#define DBG_DECODER
 #define DBG_SMALL_RECORDED_T
 
 #endif // TESTPLAN ************************************************************
@@ -83,6 +81,10 @@
     || defined(DBG_TRACK) || defined(DBG_RAWCODE) \
     || defined(DBG_DECODER)
 #define DEBUG
+#endif
+
+#ifdef DEBUG
+#include "debug.h"
 #endif
 
 #define MAX_DURATION     65535
@@ -384,7 +386,7 @@ inline bool Band::test_value(uint16_t d) {
     if (!mid) {
         got_it = false;
 #ifdef DBG_TRACE
-        dbgf("BSEP> cmp %u to uninit'd", d);
+        dbgf("BSEP> cmp %u to uninitialized d", d);
 #endif
     } else {
         got_it = (d >= inf && d <= sup);
@@ -533,16 +535,15 @@ inline bool Rail::rail_eat(uint16_t d) {
                     // is b_long, yes), we can adjust boundaries accordingly.
 
                 b_short.inf = (b_short.mid >> 1) - (b_short.mid >> 3);
-
                 b_long.inf = b_short.sup + (b_short.sup >> 3);
                 b_long.sup = b_long.mid + (b_long.mid >> 1) + (b_long.mid >> 3);
 
                 count_got_it = 1;
                 band_count = 2;
 
-                    // FIXME
-                    //   Test if intervals overlap?
-                    //   That is, test if b_short.sup >= b_long.inf?
+                    // Test if intervals overlap?
+                    // That is, test if b_short.sup >= b_long.inf?
+                    // Not done for now...
                 ;
 
                 if (pband == &b_short) {
@@ -583,11 +584,6 @@ inline bool Rail::rail_eat(uint16_t d) {
         dbgf("R> rail terminated, status = %d", status);
 #endif
 
-            // FIXME?
-            //   A big separator (bigger than b_sep.sup) could be seen as a
-            //   TERMINATION separator (or INITIALIZATION SEQUENCE of the next
-            //   signal arriving, that's just about the same).
-            //   Seen on portail signal.
         return false;
     }
 
@@ -1018,9 +1014,9 @@ enum class Signal {
 };
 
 #define DEC_ID_RAW_INCONSISTENT   0
-#define DEC_ID_RAW_SYNC           1
 
-#define DEC_ID_START              2 // Start of enumeration of real decoders
+#define DEC_ID_START              1 // Start of enumeration of real decoders
+#define DEC_ID_RAW_SYNC           1
 #define DEC_ID_TRIBIT             2
 #define DEC_ID_TRIBIT_INV         3
 #define DEC_ID_MANCHESTER         4
@@ -1276,6 +1272,7 @@ void DecoderRawInconsistent::dbg_decoder(byte disp_level, byte seq) const {
 class DecoderRawSync: public Decoder {
     private:
         byte nb_low_high;
+        Signal sync_shape;
 
     public:
         DecoderRawSync(byte arg_nb_low_high):
@@ -1285,7 +1282,7 @@ class DecoderRawSync: public Decoder {
 
         virtual byte get_id() const override { return DEC_ID_RAW_SYNC; }
 
-        virtual void add_signal_step(Signal lo, Signal hi) override { }
+        virtual void add_signal_step(Signal lo, Signal hi);
 
         virtual void add_sync(byte n) override;
 
@@ -1294,6 +1291,20 @@ class DecoderRawSync: public Decoder {
 #endif
 
 };
+
+void DecoderRawSync::add_signal_step(Signal lo, Signal hi) {
+    if (!nb_low_high)
+        sync_shape = lo;
+
+    if (lo != sync_shape) {
+        ++nb_errors;
+    } else if (hi == Signal::OTHER) {
+    } else if (lo != hi) {
+        ++nb_errors;
+    } else {
+        ++nb_low_high;
+    }
+}
 
 void DecoderRawSync::add_sync(byte n) {
     nb_low_high += n;
@@ -1587,6 +1598,8 @@ void DecoderManchester::dbg_decoder(byte disp_level, byte seq) const {
 //   If using .h / .cpp, there'd be no need to organize code in this weird way.
 Decoder* Decoder::build_decoder(byte id) {
     switch (id) {
+        case DEC_ID_RAW_SYNC:
+            return new DecoderRawSync(0);
         case DEC_ID_TRIBIT:
             return new DecoderTriBit();
         case DEC_ID_TRIBIT_INV:
@@ -1622,7 +1635,7 @@ typedef struct {
     //   The size of IH_timings must be a power of 2.
     //   Thus, IH_MASK allows to quickly calculate modulo, while walking through
     //   IH_timings.
-#define IH_SIZE 16 // FIXME (used to be 32)
+#define IH_SIZE 16
 #define IH_MASK (IH_SIZE - 1)
 IH_timing_t IH_timings[IH_SIZE];
 volatile unsigned char IH_write_head = 0;
@@ -1641,6 +1654,7 @@ void handle_interrupt() {
     byte r = sim_int_count % 2;
     if (sim_int_count >= sim_timings_count) {
         d = 100;
+        sim_int_count = sim_timings_count + 1;
     } else {
         d = sim_timings[sim_int_count++];
     }
@@ -1685,7 +1699,6 @@ bool process_interrupt_timing(Track *ptrack) {
 
     bool ret;
 
-// CRITICAL SECTION - NO INTERRUPTS !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     cli();
 
     if (IH_read_head != IH_write_head) {
@@ -1693,7 +1706,6 @@ bool process_interrupt_timing(Track *ptrack) {
         IH_read_head = (IH_read_head + 1) & IH_MASK;
 
         sei();
-// END OF CRITICAL SECTION (CASE 1) !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
 #ifdef DBG_TIMINGS
         unsigned long t0 = micros();
@@ -1717,7 +1729,6 @@ bool process_interrupt_timing(Track *ptrack) {
     } else {
 
         sei();
-// END OF CRITICAL SECTION (CASE 2) !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
         ret = false;
     }
@@ -1843,12 +1854,6 @@ Decoder* decode_rawcode(const RawCode *raw) {
         }
         assert(pdec);
 
-            // FIXME
-//        dbgf("pdec->get_id() = %d, nb_errors = %d, nb_bits = %d", pdec->get_id(),
-//                pdec->get_nb_errors(), pdec->get_nb_bits());
-//        dbgf("pdec_head = 0x%lx", (long unsigned)pdec_head);
-//        dbgf("pdec_tail = 0x%lx", (long unsigned)pdec_tail);
-
         pdec->set_t(psec->t);
 
         if (psec->sts != STS_CONTINUED || i == raw->nb_sections - 1) {
@@ -1889,7 +1894,7 @@ void loop() {
 
     track.treset();
     sim_int_count_svg = sim_int_count;
-    while (track.get_trk() != TRK_DATA && sim_int_count < sim_timings_count) {
+    while (track.get_trk() != TRK_DATA && sim_int_count <= sim_timings_count) {
         for (int i = 0; i < 6; ++i)
             handle_interrupt();
         while (track.get_trk() != TRK_DATA && process_interrupt_timing(&track)) {
@@ -1933,7 +1938,8 @@ void loop() {
         while (track.get_trk() != TRK_DATA && process_interrupt_timing(&track)) {
         }
 
-        sleep_mode();
+//        sleep_mode();
+        delay(1);
     }
     detachInterrupt(INT_RFINPUT);
 
@@ -1948,13 +1954,10 @@ void loop() {
 
     Decoder *pdec = decode_rawcode(praw);
     if (pdec) {
-        dbg("mark a"); // FIXME
 #ifdef DBG_DECODER
         pdec->dbg_decoder(2);
 #endif
         delete pdec;
-    } else {
-        dbg("mark b"); // FIXME
     }
 
 #endif // DBG_SIMULATE

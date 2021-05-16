@@ -1,0 +1,6 @@
+[0] Sync 11
+    T=SYN, E=0, S(lo)=340, L(lo)=340, S(hi)=364, L(hi)=364, P=3740
+[1] Received 65 bits: 00 a4 f4 70 bc 22 63 3f fb
+    T=TRI, E=0, S=352, L=734, P=15300
+[2] Sync 8
+    T=SYN, E=0, S=352, L=734, P=0
