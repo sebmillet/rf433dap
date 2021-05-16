@@ -70,8 +70,8 @@
 //#define DBG_TIMINGS
 //#define DBG_TRACK
 //#define DBG_RAWCODE
-//#define DBG_DECODER
-#define DBG_SMALL_RECORDED_T
+#define DBG_DECODER
+//#define DBG_SMALL_RECORDED_T
 
 #endif // TESTPLAN ************************************************************
 // ****************************************************************************
@@ -88,7 +88,7 @@
 #endif
 
 #define MAX_DURATION     65535
-#define MAX_SEP_DURATION 65534
+#define MAX_SEP_DURATION 65535
 
 #define MAX_SECTIONS 12
 
@@ -353,12 +353,7 @@ inline bool Band::init_sep(uint16_t d) {
     dbgf("BSEP> init: %u", d);
 #endif
 
-//    uint32_t tmp = d;
-//    tmp <<= 1;
-//    if (tmp > MAX_SEP_DURATION)
-//        tmp = MAX_SEP_DURATION;
-//    sup = tmp;
-    sup = MAX_DURATION;
+    sup = MAX_SEP_DURATION;
     inf = d >> 1;
     inf += (inf >> 2);
     mid = d;
@@ -775,8 +770,9 @@ inline void Track::track_eat(byte r, uint16_t d) {
         return;
     }
 
+        // [COMMENT002]
         // We missed an interrupt apparently (two calls with same r), so we
-        // should discard the ongoing signal.
+        // had better discard the actual signal.
     if (r == prev_r)
         d = 0;
     prev_r = r;
@@ -791,27 +787,6 @@ inline void Track::track_eat(byte r, uint16_t d) {
 #ifdef DBG_TRACE
         dbgf("T> b = %d", b);
 #endif
-
-//        if (r_low.index >= 1 || r_high.index >= 1) {
-//            byte li = r_low.index;
-//            byte hi = r_high.index;
-//            Rail *prail = nullptr;
-//            if (r_low.index > r_high.index) {
-//                prail = &r_low;
-//            } else if (r_high.index > r_low.index) {
-//                prail = &r_high;
-//            }
-//            if (prail) {
-//                prail->rec >>= 1;
-//                prail->index--;
-//            }
-//            if (r_high.index != r_low.index) {
-//                dbgf("(prev) li = %i, hi = %i", li, hi);
-//                dbgf("r_low.index = %i, r_high.index = %i",
-//                     r_low.index, r_high.index);
-//            }
-//            assert(r_high.index == r_low.index);
-//        }
 
         if (r_low.status == RAIL_OPEN)
             r_low.status = RAIL_CLOSED;
@@ -1119,9 +1094,6 @@ byte BitVector::get_nth_byte(byte n) const {
     return array[n];
 }
 
-#define DECODER_NB_BYTES 16
-//#define DECODER_NB_BYTES 6
-
 class Decoder {
     protected:
         BitVector data;
@@ -1133,7 +1105,7 @@ class Decoder {
 
         Decoder *next;
 
-        void add_decoded_bit(byte valbit);
+        void add_data_bit(byte valbit);
 
     public:
         Decoder(byte arg_convention);
@@ -1163,10 +1135,8 @@ class Decoder {
 Decoder::Decoder(byte arg_convention):
         convention(arg_convention),
         nb_errors(0),
-        next(nullptr)
-{
-//    for (byte i = 0; i < DECODER_NB_BYTES; ++i)
-//        data.at(i) = 0;
+        next(nullptr) {
+
 }
 
 Decoder::~Decoder() {
@@ -1179,7 +1149,7 @@ void Decoder::attach_next(Decoder *pdec) {
     next = pdec;
 }
 
-void Decoder::add_decoded_bit(byte valbit) {
+void Decoder::add_data_bit(byte valbit) {
     data.add_bit(valbit);
 }
 
@@ -1351,7 +1321,7 @@ void DecoderRawUnknownCoding::add_signal_step(Signal lo, Signal hi) {
 
     for (short i = 0; i < 2; ++i) {
         Signal x = (i ? hi : lo);
-        add_decoded_bit(x == Signal::SHORT ? 0 : 1);
+        add_data_bit(x == Signal::SHORT ? 0 : 1);
     }
 }
 
@@ -1387,7 +1357,6 @@ void DecoderRawUnknownCoding::dbg_decoder(byte disp_level, byte seq) const {
     delete buf;
 
     dbg_meta(disp_level);
-
     dbg_next(disp_level, seq);
 }
 #endif
@@ -1419,9 +1388,9 @@ class DecoderTriBit: public Decoder {
 
 void DecoderTriBit::add_signal_step(Signal lo, Signal hi) {
         // [COMMENT001]
-        // The below case corresponds to the reception of (short, sep) or (high,
-        // sep), meaning, the low signal is meaningful whereas the high signal
-        // has no encoding meaning.
+        // The below case corresponds to the reception of (short, sep) or
+        // (long, sep), meaning, the low signal is meaningful whereas the high
+        // signal has no encoding meaning.
     if (hi == Signal::OTHER) {
         unused_final_low = lo;
         return;
@@ -1437,7 +1406,7 @@ void DecoderTriBit::add_signal_step(Signal lo, Signal hi) {
         return;
     }
 
-    add_decoded_bit(valbit);
+    add_data_bit(valbit);
 }
 
 #ifdef DBG_DECODER
@@ -1496,7 +1465,7 @@ void DecoderTriBitInv::add_signal_step(Signal lo, Signal hi) {
     }
 
     if (add_it)
-        add_decoded_bit(valbit);
+        add_data_bit(valbit);
 
     last_hi = hi;
 }
@@ -1551,9 +1520,9 @@ void DecoderManchester::add_buf(byte r) {
 void DecoderManchester::consume_buf() {
     if (buf_pos >= 2) {
         if (buf[0] == 0 && buf[1] == 1) {
-            add_decoded_bit(convention);
+            add_data_bit(convention);
         } else if (buf[0] == 1 && buf[1] == 0) {
-            add_decoded_bit(!convention);
+            add_data_bit(!convention);
         } else {
                 // FIXME: créer register_error pour gérer ça de manière
                 // cohérente entre les différents descendants de Decoder.
@@ -1594,8 +1563,6 @@ void DecoderManchester::dbg_decoder(byte disp_level, byte seq) const {
 // * ********************** ***************************************************
 
 // Must be located here, so that classes are defined
-// FIXME?
-//   If using .h / .cpp, there'd be no need to organize code in this weird way.
 Decoder* Decoder::build_decoder(byte id) {
     switch (id) {
         case DEC_ID_RAW_SYNC:
@@ -1782,9 +1749,6 @@ void read_simulated_timings_from_usb() {
 void setup() {
     pinMode(PIN_RFINPUT, INPUT);
     Serial.begin(115200);
-
-    sleep_enable();
-    set_sleep_mode(SLEEP_MODE_IDLE);
 }
 
 Track track;
@@ -1803,6 +1767,7 @@ Decoder* decode_rawcode(const RawCode *raw) {
                 // It should never happen because we continually check that 'r'
                 // submitted values (as argument to track_eat()) switch between
                 // 0 and 1, so that low and high rails are populated equally.
+                // See [COMMENT002].
             assert(false);
 
         } else if (psec->low_bands == 1 && psec->high_bands == 1) {
@@ -1878,7 +1843,6 @@ void loop() {
 //    initialize_veryrecent();
 
 #ifdef DBG_SIMULATE
-
     if (sim_int_count >= sim_timings_count)
         read_simulated_timings_from_usb();
 
@@ -1900,6 +1864,7 @@ void loop() {
         while (track.get_trk() != TRK_DATA && process_interrupt_timing(&track)) {
         }
     }
+
 #ifdef DBG_RAWCODE
     dbgf("IH_max_pending_timings = %d", IH_max_pending_timings);
 #endif
@@ -1938,7 +1903,6 @@ void loop() {
         while (track.get_trk() != TRK_DATA && process_interrupt_timing(&track)) {
         }
 
-//        sleep_mode();
         delay(1);
     }
     detachInterrupt(INT_RFINPUT);
