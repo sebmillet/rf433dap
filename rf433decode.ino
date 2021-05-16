@@ -65,7 +65,7 @@
 // It is OK to update the below, because if this code is compiled, then we are
 // not in the test plan.
 
-#define DBG_SIMULATE
+//#define DBG_SIMULATE
 //#define DBG_TRACE
 //#define DBG_TIMINGS
 //#define DBG_TRACK
@@ -530,7 +530,8 @@ inline bool Rail::rail_eat(uint16_t d) {
                     // is b_long, yes), we can adjust boundaries accordingly.
 
                 b_short.inf = (b_short.mid >> 1) - (b_short.mid >> 3);
-                b_long.inf = b_short.sup + (b_short.sup >> 3);
+                b_short.sup = (b_short.mid + b_long.mid) >> 1;
+                b_long.inf = b_short.sup + 1;
                 b_long.sup = b_long.mid + (b_long.mid >> 1) + (b_long.mid >> 3);
 
                 count_got_it = 1;
