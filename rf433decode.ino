@@ -23,14 +23,14 @@
 //   See file schema.fzz (Fritzing format) or schema.png
 //
 
-// BEGIN SCHEMATIC CONSTANTS
+    // The below MUST be 2 or 3, as we attach an interrupt handler on it
 #define PIN_RFINPUT  2
-#define INT_RFINPUT  (digitalPinToInterrupt(PIN_RFINPUT))
-// END SCHEMATIC CONSTANTS
 
 #include <Arduino.h>
 #include <avr/sleep.h>
 
+// ****************************************************************************
+// TESTPLAN *******************************************************************
 #if TESTPLAN == 1
 
 #define DBG_SIMULATE
@@ -57,9 +57,7 @@
 #ifdef TESTPLAN
 #error "TESTPLAN macro has an illegal value."
 #endif
-
-
-// ****************************************************************************
+// TESTPLAN *******************************************************************
 // ****************************************************************************
 
 // It is OK to update the below, because if this code is compiled, then we are
@@ -71,11 +69,9 @@
 //#define DBG_TRACK
 //#define DBG_RAWCODE
 #define DBG_DECODER
-//#define DBG_SMALL_RECORDED_T
+#define DBG_SMALL_RECORDED_T
 
-#endif // TESTPLAN ************************************************************
-// ****************************************************************************
-
+#endif // TESTPLAN
 
 #if defined(DBG_SIMULATE) || defined(DBG_TRACE) || defined(DBG_TIMINGS) \
     || defined(DBG_TRACK) || defined(DBG_RAWCODE) \
@@ -93,12 +89,11 @@
 #define MAX_SECTIONS 12
 
 
+#ifdef DBG_SIMULATE
+
 // * ********************** ***************************************************
 // * Read input from serial ***************************************************
 // * ********************** ***************************************************
-
-#ifdef DBG_SIMULATE
-
 //
 // SerialLine
 //
@@ -689,278 +684,6 @@ void RawCode::debug_rawcode() const {
         dbgf("      high: [%d] n = %2d, v = 0x" FMTRECORDEDT "",
                       psec->high_bands, psec->high_bits, psec->high_rec);
     }
-}
-#endif
-
-
-// * ***** ********************************************************************
-// * Track ********************************************************************
-// * ***** ********************************************************************
-
-#ifdef DBG_SIMULATE
-SerialLine sl;
-char buffer[SerialLine::buf_len];
-
-uint16_t sim_timings[150];
-
-uint16_t sim_timings_count = 0;
-
-unsigned int sim_int_count = 0;
-unsigned int sim_int_count_svg;
-unsigned int counter;
-#endif
-
-#define TRACK_MIN_INITSEQ_DURATION 4000
-#define TRACK_MIN_BITS             8
-
-typedef enum {TRK_WAIT, TRK_RECV, TRK_DATA} trk_t;
-class Track {
-    private:
-        volatile trk_t trk;
-        Rail r_low;
-        Rail r_high;
-        byte prev_r;
-
-        RawCode rawcode;
-
-    public:
-        Track();
-
-        void treset();
-        void track_eat(byte r, uint16_t d);
-#ifdef DBG_TRACK
-        void track_debug() const;
-#endif
-
-        trk_t get_trk() const { return trk; }
-        const RawCode *get_rawcode() const { return &rawcode; }
-};
-
-Track::Track() {
-    treset();
-}
-
-inline void Track::treset() {
-    trk = TRK_WAIT;
-    rawcode.nb_sections = 0;
-    rawcode.initseq = 0;
-}
-
-inline void Track::track_eat(byte r, uint16_t d) {
-
-#ifdef DBG_TRACE
-    dbgf("T> trk = %d, r = %d, d = %u", trk, r, d);
-#endif
-
-    if (trk == TRK_WAIT) {
-        if (r == 1 && d >= TRACK_MIN_INITSEQ_DURATION) {
-            r_low.rreset();
-            r_high.rreset();
-            prev_r = r;
-            rawcode.initseq = d;
-            trk = TRK_RECV;
-        }
-        return;
-    } else if (trk != TRK_RECV) {
-        return;
-    }
-
-        // [COMMENT002]
-        // We missed an interrupt apparently (two calls with same r), so we
-        // had better discard the actual signal.
-    if (r == prev_r)
-        d = 0;
-    prev_r = r;
-
-    Rail *prail = (r == 0 ? &r_low : &r_high);
-    if (prail->status != RAIL_OPEN)
-        return;
-
-    bool b = prail->rail_eat(d);
-    if (r == 1 && (!b || r_low.status != RAIL_OPEN)) {
-
-#ifdef DBG_TRACE
-        dbgf("T> b = %d", b);
-#endif
-
-        if (r_low.status == RAIL_OPEN)
-            r_low.status = RAIL_CLOSED;
-        if (r_high.status == RAIL_OPEN)
-            r_high.status = RAIL_CLOSED;
-
-        section_term_status_t sts;
-        if (r_low.status == RAIL_FULL && r_high.status == RAIL_FULL) {
-            sts = STS_CONTINUED;
-        } else if (r_high.status == RAIL_STP_RCVD) {
-            if (r_low.status == RAIL_CLOSED || r_low.status == RAIL_FULL) {
-                sts = (r_low.last_bit_recorded ? STS_LONG_SEP : STS_SHORT_SEP);
-            } else if (r_low.status == RAIL_STP_RCVD) {
-                sts = STS_SEP_SEP;
-            } else {
-                sts = STS_ERROR;
-            }
-        } else {
-            sts = STS_ERROR;
-        }
-
-
-/*
-Tests implemented below reproduce the following decision table
-
-Notations:
-  "pr=cont":  the previous track terminated as STS_CONTINUED
-  "pr!=cont": the previous track didn't terminate as STS_CONTINUED
-  "nbsec": nb_sections
-  "cur":   how did current track end? ->
-    "sep":   it ended with a separator
-    "err":   it ended with an error
-    "full":  it didn't end but record is full
-   CUR?:  shall we record the current track?
-   NEXT?: what to do next? (reset track, start new section)
-
-  +---------------+-------- +----------+-------++-------+--------------+
-  |nb_bits        | nbsec   | prev     | cur   ||  CUR? | NEXT?        |
-  +---------------+-------- +----------+-------++-------+--------------+
-  |bits<min_bits  | !nbsec  | n/a      | sep   ||  DISC | RESET        |
-  |               |         |          | err   ||  DISC | RESET        |
-  |               |         |          | full  ||  n/a  | n/a          |
-  |               | nbsec>0 | pr=cont  | sep   ||  REC  | NEWSEC       |
-  |               |         |          | err   ||  DISC | DATA         |
-  |               |         |          | full  ||  n/a  | n/a          |
-  |               | nbsec>0 | pr!=cont | sep   ||  DISC | DATA         |
-  |               |         |          | err   ||  DISC | DATA         |
-  |               |         |          | full  ||  n/a  | n/a          |
-  |bits>=min_bits | !nbsec  | n/a      | sep   ||  REC  | NEWSEC       |
-  |               |         |          | err   ||  DISC | RESET        |
-  |               |         |          | ful   ||  REC  | NEWSEC(CONT) |
-  |               | nbsec>0 | pr=cont  | sep   ||  REC  | NEWSEC       |
-  |               |         |          | err   ||  DISC | DATA         |
-  |               |         |          | ful   ||  REC  | NEWSEC(CONT) |
-  |               | nbsec>0 | pr!=cont | sep   ||  REC  | NEWSEC       |
-  |               |         |          | err   ||  DISC | DATA         |
-  |               |         |          | ful   ||  REC  | NEWSEC(CONT) |
-  +---------------+-------- +----------+-------++-------+--------------+
-*/
-
-        bool record_current_section;
-
-#ifdef DBG_TRACK
-        bool do_track_debug = false;
-        (void)do_track_debug;
-#endif
-
-        if (r_low.index < TRACK_MIN_BITS || r_high.index < TRACK_MIN_BITS) {
-            record_current_section =
-                (sts != STS_ERROR
-                 && rawcode.nb_sections
-                 && rawcode.sections[rawcode.nb_sections - 1].sts
-                    == STS_CONTINUED);
-
-#ifdef DBG_TRACK
-            do_track_debug = record_current_section;
-#endif
-
-        } else {
-            record_current_section = (sts != STS_ERROR);
-
-#ifdef DBG_TRACK
-            do_track_debug = true;
-#endif
-
-        }
-
-#ifdef DBG_TRACE
-        dbgf("T> reccursec=%i, sts=%i", record_current_section, sts);
-#endif
-#if defined(DBG_SIMULATE) && defined(DBG_TRACK)
-        if (do_track_debug) {
-            dbgf("%s  {", counter >= 2 ? ",\n" : "");
-            dbgf("    \"N\":%d,\"start\":%u,\"end\":%u,",
-                sim_timings_count, sim_int_count_svg, sim_int_count - 1);
-            track_debug();
-            dbg("  }");
-        }
-#endif
-
-        if (record_current_section) {
-#ifdef DBG_TRACE
-            dbg("T> recording current section");
-#endif
-            Section *psec = &rawcode.sections[rawcode.nb_sections++];
-            psec->sts = sts;
-
-            psec->t.sep = (sts == STS_SHORT_SEP
-                           || sts == STS_LONG_SEP
-                           || sts == STS_SEP_SEP ? d : 0);
-            if (r_low.b_short.test_value(r_high.b_short.mid)
-                    && !r_low.b_short.test_value(r_high.b_long.mid)
-                    && !r_low.b_long.test_value(r_high.b_short.mid)
-                    && r_low.b_long.test_value(r_high.b_long.mid)) {
-                psec->t.low_short = (r_low.b_short.mid + r_high.b_short.mid)
-                                    >> 1;
-                psec->t.low_long = (r_low.b_long.mid + r_high.b_long.mid)
-                                    >> 1;
-                psec->t.high_short = 0;
-                psec->t.high_long = 0;
-            } else {
-                psec->t.low_short = r_low.b_short.mid;
-                psec->t.low_long = r_low.b_long.mid;
-                psec->t.high_short = r_high.b_short.mid;
-                psec->t.high_long = r_high.b_long.mid;
-            }
-
-            psec->low_rec = r_low.rec;
-            psec->low_bits = r_low.index;
-            psec->low_bands = r_low.get_band_count();
-            psec->high_rec = r_high.rec;
-            psec->high_bits = r_high.index;
-            psec->high_bands = r_high.get_band_count();
-
-            trk = ((rawcode.nb_sections == MAX_SECTIONS) ? TRK_DATA : TRK_RECV);
-
-            if (trk == TRK_RECV) {
-#ifdef DBG_TRACE
-                dbg("T> keep receiving (soft reset)");
-#endif
-                r_low.rreset_soft();
-                r_high.rreset_soft();
-            } else {
-#ifdef DBG_TRACE
-                dbg("T> stop receiving (data)");
-#endif
-            }
-        } else {
-            if (rawcode.nb_sections) {
-                trk = TRK_DATA;
-            } else {
-                treset();
-                    // WARNING
-                    //   Re-entrant call... not ideal.
-                track_eat(r, d);
-            }
-        }
-
-    }
-}
-
-#ifdef DBG_TRACK
-const char* trk_names[] = {
-    "TRK_WAIT",
-    "TRK_RECV",
-    "TRK_DATA"
-};
-void Track::track_debug() const {
-    recorded_t xorval = r_low.rec ^ r_high.rec;
-    dbgf("    \"trk\":%s,\"xorval\":0x" FMTRECORDEDT ",",
-         trk_names[trk], xorval);
-    if (trk != TRK_WAIT) {
-        for (byte i = 0; i < 2; ++i) {
-            dbgf("    \"%s\":{", (i == 0 ? "r_low" : "r_high"));
-            (i == 0 ? &r_low : &r_high)->rail_debug();
-            dbgf("    }%s", i == 1 ? "" : ",");
-        }
-    }
-
 }
 #endif
 
@@ -1580,20 +1303,25 @@ Decoder* Decoder::build_decoder(byte id) {
 }
 
 
-// * ************* ************************************************************
-// * Interruptions ************************************************************
-// * ************* ************************************************************
+// * ***** ********************************************************************
+// * Track ********************************************************************
+// * ***** ********************************************************************
 
-#ifdef DBG_TIMINGS
-uint16_t ih_dbg_timings[60];
-uint16_t ih_dbg_exec[60];
-unsigned int ih_dbg_pos = 0;
+#ifdef DBG_SIMULATE
+SerialLine sl;
+char buffer[SerialLine::buf_len];
+
+uint16_t sim_timings[150];
+
+uint16_t sim_timings_count = 0;
+
+unsigned int sim_int_count = 0;
+unsigned int sim_int_count_svg;
+unsigned int counter;
 #endif
 
-typedef struct {
-    byte r;
-    uint16_t d;
-} IH_timing_t;
+#define TRACK_MIN_INITSEQ_DURATION 4000
+#define TRACK_MIN_BITS             8
 
     // IMPORTANT
     //   IH_MASK must be equal to the size of IH_timings - 1.
@@ -1602,15 +1330,101 @@ typedef struct {
     //   IH_timings.
 #define IH_SIZE 16
 #define IH_MASK (IH_SIZE - 1)
-IH_timing_t IH_timings[IH_SIZE];
-volatile unsigned char IH_write_head = 0;
-volatile unsigned char IH_read_head = 0;
-unsigned char IH_max_pending_timings = 0;
+struct IH_timing_t {
+    byte r;
+    uint16_t d;
 
-    // This one fills the array IH_timings
+    IH_timing_t() { }
+    IH_timing_t(const volatile IH_timing_t& t) {
+        r = t.r;
+        d = t.d;
+    }
+};
 
-// CRITICAL SECTION - NO INTERRUPTS !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-void handle_interrupt() {
+// NOTE - ABOUT STATIC MEMBER VARIABLES AND FUNCTIONS IN THE TRACK CLASS
+//   The class is designed so that one object is useful at a time. This comes
+//   from the fact that we attach interrupt handler to a static method (as is
+//   mandatory: an object method would not be possible, compiler would block
+//   because no way to populate 'this' pointer.)
+//   At last, the distinction between static and non-static members is a bit
+//   arbitrary.
+//   I decided that variables and functions _directly_ tied to interrupt handler
+//   are static, while all others are non-static.
+typedef enum {TRK_WAIT, TRK_RECV, TRK_DATA} trk_t;
+class Track {
+    private:
+
+        byte pin_number;
+
+#ifdef DBG_TIMINGS
+        static uint16_t ih_dbg_timings[60];
+        static uint16_t ih_dbg_exec[60];
+        static unsigned int ih_dbg_pos;
+#endif
+        static volatile IH_timing_t IH_timings[IH_SIZE];
+        static volatile unsigned char IH_write_head;
+        static volatile unsigned char IH_read_head;
+        static byte IH_max_pending_timings;
+        static bool IH_interrupt_handler_is_attached;
+
+        volatile trk_t trk;
+        Rail r_low;
+        Rail r_high;
+        byte prev_r;
+
+        RawCode rawcode;
+
+    public:
+        Track(int arg_pin_number);
+
+        static void ih_handle_interrupt();
+        static byte ih_get_max_pending_timings() {
+            return IH_max_pending_timings;
+        }
+
+        void treset();
+        void track_eat(byte r, uint16_t d);
+#ifdef DBG_TRACK
+        void track_debug() const;
+#endif
+#ifdef DBG_TIMINGS
+        void dbg_timings() const;
+#endif
+
+        trk_t get_trk() const { return trk; }
+
+        void force_stop_recv();
+
+        void activate_recording();
+        void deactivate_recording();
+        bool process_interrupt_timing();
+        bool do_events();
+
+        Decoder* get_decoded_data();
+};
+
+#ifdef DBG_TIMINGS
+uint16_t Track::ih_dbg_timings[60];
+uint16_t Track::ih_dbg_exec[60];
+unsigned int Track::ih_dbg_pos = 0;
+#endif
+volatile IH_timing_t Track::IH_timings[IH_SIZE];
+volatile unsigned char Track::IH_write_head = 0;
+volatile unsigned char Track::IH_read_head = 0;
+byte Track::IH_max_pending_timings = 0;
+bool Track::IH_interrupt_handler_is_attached = false;
+
+Track::Track(int arg_pin_number):pin_number(arg_pin_number) {
+    treset();
+}
+
+inline void Track::treset() {
+    trk = TRK_WAIT;
+    rawcode.nb_sections = 0;
+    rawcode.initseq = 0;
+}
+
+void Track::ih_handle_interrupt() {
     static unsigned long last_t = 0;
     const unsigned long t = micros();
 
@@ -1646,42 +1460,246 @@ void handle_interrupt() {
     IH_timings[IH_write_head].r = r;
     IH_timings[IH_write_head].d = d;
 }
-// END OF CRITICAL SECTION !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-    // This one consumes what got filled in the array IH_timings by
-    // handle_interrupt().
-    // Returns true if there was data in IH_timings, false otherwise.
+void Track::force_stop_recv() {
+    if (get_trk() == TRK_RECV) {
+        track_eat(0, 0);
+        track_eat(1, 0);
+        do_events();
+    }
+}
 
-bool process_interrupt_timing(Track *ptrack) {
+inline void Track::track_eat(byte r, uint16_t d) {
 
-        // FIXME
-        //   I don't think the '+ IH_SIZE' term is necessary, as we are working
-        //   in unsigned arithmetic... But I prefer to leave it for now.
+#ifdef DBG_TRACE
+    dbgf("T> trk = %d, r = %d, d = %u", trk, r, d);
+#endif
+
+    if (trk == TRK_WAIT) {
+        if (r == 1 && d >= TRACK_MIN_INITSEQ_DURATION) {
+            r_low.rreset();
+            r_high.rreset();
+            prev_r = r;
+            rawcode.initseq = d;
+            trk = TRK_RECV;
+        }
+        return;
+    } else if (trk != TRK_RECV) {
+        return;
+    }
+
+        // [COMMENT002]
+        // We missed an interrupt apparently (two calls with same r), so we
+        // had better discard the actual signal.
+    if (r == prev_r)
+        d = 0;
+    prev_r = r;
+
+    Rail *prail = (r == 0 ? &r_low : &r_high);
+    if (prail->status != RAIL_OPEN)
+        return;
+
+    bool b = prail->rail_eat(d);
+    if (r == 1 && (!b || r_low.status != RAIL_OPEN)) {
+
+#ifdef DBG_TRACE
+        dbgf("T> b = %d", b);
+#endif
+
+        if (r_low.status == RAIL_OPEN)
+            r_low.status = RAIL_CLOSED;
+        if (r_high.status == RAIL_OPEN)
+            r_high.status = RAIL_CLOSED;
+
+        section_term_status_t sts;
+        if (r_low.status == RAIL_FULL && r_high.status == RAIL_FULL) {
+            sts = STS_CONTINUED;
+        } else if (r_high.status == RAIL_STP_RCVD) {
+            if (r_low.status == RAIL_CLOSED || r_low.status == RAIL_FULL) {
+                sts = (r_low.last_bit_recorded ? STS_LONG_SEP : STS_SHORT_SEP);
+            } else if (r_low.status == RAIL_STP_RCVD) {
+                sts = STS_SEP_SEP;
+            } else {
+                sts = STS_ERROR;
+            }
+        } else {
+            sts = STS_ERROR;
+        }
+
+
+/*
+Tests implemented below reproduce the following decision table
+
+Notations:
+  "pr=cont":  the previous track terminated as STS_CONTINUED
+  "pr!=cont": the previous track didn't terminate as STS_CONTINUED
+  "nbsec": nb_sections
+  "cur":   how did current track end? ->
+    "sep":   it ended with a separator
+    "err":   it ended with an error
+    "full":  it didn't end but record is full
+   CUR?:  shall we record the current track?
+   NEXT?: what to do next? (reset track, start new section)
+
+  +---------------+-------- +----------+-------++-------+--------------+
+  |nb_bits        | nbsec   | prev     | cur   ||  CUR? | NEXT?        |
+  +---------------+-------- +----------+-------++-------+--------------+
+  |bits<min_bits  | !nbsec  | n/a      | sep   ||  DISC | RESET        |
+  |               |         |          | err   ||  DISC | RESET        |
+  |               |         |          | full  ||  n/a  | n/a          |
+  |               | nbsec>0 | pr=cont  | sep   ||  REC  | NEWSEC       |
+  |               |         |          | err   ||  DISC | DATA         |
+  |               |         |          | full  ||  n/a  | n/a          |
+  |               | nbsec>0 | pr!=cont | sep   ||  DISC | DATA         |
+  |               |         |          | err   ||  DISC | DATA         |
+  |               |         |          | full  ||  n/a  | n/a          |
+  |bits>=min_bits | !nbsec  | n/a      | sep   ||  REC  | NEWSEC       |
+  |               |         |          | err   ||  DISC | RESET        |
+  |               |         |          | ful   ||  REC  | NEWSEC(CONT) |
+  |               | nbsec>0 | pr=cont  | sep   ||  REC  | NEWSEC       |
+  |               |         |          | err   ||  DISC | DATA         |
+  |               |         |          | ful   ||  REC  | NEWSEC(CONT) |
+  |               | nbsec>0 | pr!=cont | sep   ||  REC  | NEWSEC       |
+  |               |         |          | err   ||  DISC | DATA         |
+  |               |         |          | ful   ||  REC  | NEWSEC(CONT) |
+  +---------------+-------- +----------+-------++-------+--------------+
+*/
+
+        bool record_current_section;
+
+#ifdef DBG_TRACK
+        bool do_track_debug = false;
+        (void)do_track_debug;
+#endif
+
+        if (r_low.index < TRACK_MIN_BITS || r_high.index < TRACK_MIN_BITS) {
+            record_current_section =
+                (sts != STS_ERROR
+                 && rawcode.nb_sections
+                 && rawcode.sections[rawcode.nb_sections - 1].sts
+                    == STS_CONTINUED);
+
+#ifdef DBG_TRACK
+            do_track_debug = record_current_section;
+#endif
+
+        } else {
+            record_current_section = (sts != STS_ERROR);
+
+#ifdef DBG_TRACK
+            do_track_debug = true;
+#endif
+
+        }
+
+#ifdef DBG_TRACE
+        dbgf("T> reccursec=%i, sts=%i", record_current_section, sts);
+#endif
+#if defined(DBG_SIMULATE) && defined(DBG_TRACK)
+        if (do_track_debug) {
+            dbgf("%s  {", counter >= 2 ? ",\n" : "");
+            dbgf("    \"N\":%d,\"start\":%u,\"end\":%u,",
+                sim_timings_count, sim_int_count_svg, sim_int_count - 1);
+            track_debug();
+            dbg("  }");
+        }
+#endif
+
+        if (record_current_section) {
+#ifdef DBG_TRACE
+            dbg("T> recording current section");
+#endif
+            Section *psec = &rawcode.sections[rawcode.nb_sections++];
+            psec->sts = sts;
+
+            psec->t.sep = (sts == STS_SHORT_SEP
+                           || sts == STS_LONG_SEP
+                           || sts == STS_SEP_SEP ? d : 0);
+            if (r_low.b_short.test_value(r_high.b_short.mid)
+                    && !r_low.b_short.test_value(r_high.b_long.mid)
+                    && !r_low.b_long.test_value(r_high.b_short.mid)
+                    && r_low.b_long.test_value(r_high.b_long.mid)) {
+                psec->t.low_short = (r_low.b_short.mid + r_high.b_short.mid)
+                                    >> 1;
+                psec->t.low_long = (r_low.b_long.mid + r_high.b_long.mid)
+                                    >> 1;
+                psec->t.high_short = 0;
+                psec->t.high_long = 0;
+            } else {
+                psec->t.low_short = r_low.b_short.mid;
+                psec->t.low_long = r_low.b_long.mid;
+                psec->t.high_short = r_high.b_short.mid;
+                psec->t.high_long = r_high.b_long.mid;
+            }
+
+            psec->low_rec = r_low.rec;
+            psec->low_bits = r_low.index;
+            psec->low_bands = r_low.get_band_count();
+            psec->high_rec = r_high.rec;
+            psec->high_bits = r_high.index;
+            psec->high_bands = r_high.get_band_count();
+
+            trk = ((rawcode.nb_sections == MAX_SECTIONS) ? TRK_DATA : TRK_RECV);
+
+            if (trk == TRK_RECV) {
+#ifdef DBG_TRACE
+                dbg("T> keep receiving (soft reset)");
+#endif
+                r_low.rreset_soft();
+                r_high.rreset_soft();
+            } else {
+#ifdef DBG_TRACE
+                dbg("T> stop receiving (data)");
+#endif
+            }
+        } else {
+            if (rawcode.nb_sections) {
+                trk = TRK_DATA;
+            } else {
+                treset();
+                    // WARNING
+                    //   Re-entrant call... not ideal.
+                track_eat(r, d);
+            }
+        }
+
+    }
+}
+
+    // Returns true if a timing got processed, false otherwise.
+    // Do nothing (and returns false) if Track is in the status TRK_DATA.
+    // NOTE
+    //   When Track is in the TRK_DATA state, no erase can happen
+    //   (track_eat() will exit immediately).
+    //   Therefore the safeguard of explicitly doing nothing if in the status
+    //   TRK_DATA is redundant => it is defensive programming.
+bool Track::process_interrupt_timing() {
+    if (get_trk() == TRK_DATA)
+        return false;
+
     unsigned char IH_pending_timings =
-        ((IH_write_head + IH_SIZE) - IH_read_head) & IH_MASK;
+        (IH_write_head - IH_read_head) & IH_MASK;
     if (IH_pending_timings > IH_max_pending_timings)
         IH_max_pending_timings = IH_pending_timings;
 
     bool ret;
 
     cli();
-
     if (IH_read_head != IH_write_head) {
         IH_timing_t timing = IH_timings[IH_read_head];
         IH_read_head = (IH_read_head + 1) & IH_MASK;
 
         sei();
-
 #ifdef DBG_TIMINGS
         unsigned long t0 = micros();
 #endif
-        ptrack->track_eat(timing.r, timing.d);
+        track_eat(timing.r, timing.d);
 #ifdef DBG_TIMINGS
         unsigned long d = micros() - t0;
         if (d > MAX_DURATION)
             d = MAX_DURATION;
         ih_dbg_exec[ih_dbg_pos] = d;
-        if (ptrack->get_trk() == TRK_WAIT)
+        if (get_trk() == TRK_WAIT)
             ih_dbg_pos = 0;
         else {
             if (ih_dbg_pos < sizeof(ih_dbg_timings) / sizeof(*ih_dbg_timings))
@@ -1694,33 +1712,54 @@ bool process_interrupt_timing(Track *ptrack) {
     } else {
 
         sei();
-
         ret = false;
     }
 
     return ret;
 }
 
-
-// * ********* ****************************************************************
-// * Execution ****************************************************************
-// * ********* ****************************************************************
-
-void setup() {
-    pinMode(PIN_RFINPUT, INPUT);
-    Serial.begin(115200);
+void Track::activate_recording() {
+#ifndef DBG_SIMULATE
+    if (!IH_interrupt_handler_is_attached) {
+        attachInterrupt(digitalPinToInterrupt(pin_number), &ih_handle_interrupt,
+                CHANGE);
+        IH_interrupt_handler_is_attached = true;
+    }
+#endif
 }
 
-Track track;
+void Track::deactivate_recording() {
+#ifndef DBG_SIMULATE
+    if (IH_interrupt_handler_is_attached) {
+        detachInterrupt(digitalPinToInterrupt(pin_number));
+        IH_interrupt_handler_is_attached = false;
+    }
+#endif
+}
 
-Decoder* decode_rawcode(const RawCode *raw) {
+bool Track::do_events() {
+    activate_recording();
+    while (process_interrupt_timing())
+        ;
+    if (get_trk() == TRK_DATA) {
+        deactivate_recording();
+#ifdef DBG_RAWCODE
+        dbgf("IH_max_pending_timings = %d", ih_get_max_pending_timings());
+        rawcode.debug_rawcode();
+#endif
+        return true;
+    }
+    return false;
+}
+
+Decoder* Track::get_decoded_data() {
     Decoder *pdec_head = nullptr;
     Decoder *pdec_tail = nullptr;
     Decoder *pdec = nullptr;
 
-    for (byte i = 0; i < raw->nb_sections; ++i) {
+    for (byte i = 0; i < rawcode.nb_sections; ++i) {
 
-        const Section *psec = &raw->sections[i];
+        const Section *psec = &rawcode.sections[i];
 
         if (abs(psec->low_bits - psec->high_bits) >= 2) {
                 // Defensive programming (should never happen).
@@ -1779,9 +1818,9 @@ Decoder* decode_rawcode(const RawCode *raw) {
         }
         assert(pdec);
 
-        pdec->set_t((pdec_head ? 0 : raw->initseq), psec->t);
+        pdec->set_t((pdec_head ? 0 : rawcode.initseq), psec->t);
 
-        if (psec->sts != STS_CONTINUED || i == raw->nb_sections - 1) {
+        if (psec->sts != STS_CONTINUED || i == rawcode.nb_sections - 1) {
             if (!pdec_head) {
                 assert(!pdec_tail);
                 pdec_head = pdec;
@@ -1797,6 +1836,48 @@ Decoder* decode_rawcode(const RawCode *raw) {
 
     return pdec_head;
 }
+
+#ifdef DBG_TIMINGS
+void Track::dbg_timings() const {
+    for (unsigned int i = 0; i + 1 < ih_dbg_pos; i += 2) {
+        dbgf("%4u, %4u  |  %5u, %5u", ih_dbg_timings[i], ih_dbg_timings[i + 1],
+             ih_dbg_exec[i], ih_dbg_exec[i + 1]);
+    }
+}
+#endif
+
+#ifdef DBG_TRACK
+const char* trk_names[] = {
+    "TRK_WAIT",
+    "TRK_RECV",
+    "TRK_DATA"
+};
+void Track::track_debug() const {
+    recorded_t xorval = r_low.rec ^ r_high.rec;
+    dbgf("    \"trk\":%s,\"xorval\":0x" FMTRECORDEDT ",",
+         trk_names[trk], xorval);
+    if (trk != TRK_WAIT) {
+        for (byte i = 0; i < 2; ++i) {
+            dbgf("    \"%s\":{", (i == 0 ? "r_low" : "r_high"));
+            (i == 0 ? &r_low : &r_high)->rail_debug();
+            dbgf("    }%s", i == 1 ? "" : ",");
+        }
+    }
+
+}
+#endif
+
+
+// * ********* ****************************************************************
+// * Execution ****************************************************************
+// * ********* ****************************************************************
+
+void setup() {
+    pinMode(PIN_RFINPUT, INPUT);
+    Serial.begin(115200);
+}
+
+Track track(PIN_RFINPUT);
 
 #ifdef DBG_SIMULATE
 void read_simulated_timings_from_usb() {
@@ -1852,14 +1933,15 @@ void loop() {
     track.treset();
     sim_int_count_svg = sim_int_count;
     while (track.get_trk() != TRK_DATA && sim_int_count <= sim_timings_count) {
-        for (int i = 0; i < 6; ++i)
-            handle_interrupt();
-        while (track.get_trk() != TRK_DATA && process_interrupt_timing(&track)) {
+        for (int i = 0; i < 6; ++i) {
+            Track::ih_handle_interrupt();
         }
+        track.do_events();
     }
+    track.force_stop_recv();
 
-#ifdef DBG_RAWCODE
-    dbgf("IH_max_pending_timings = %d", IH_max_pending_timings);
+#ifdef DBG_TIMINGS
+    track.dbg_timings();
 #endif
 
 #ifdef DBG_TRACK
@@ -1868,13 +1950,7 @@ void loop() {
     }
 #endif
 
-    const RawCode *praw = track.get_rawcode();
-
-#ifdef DBG_RAWCODE
-    praw->debug_rawcode();
-#endif
-
-    Decoder *pdec = decode_rawcode(praw);
+    Decoder *pdec = track.get_decoded_data();
     if (pdec) {
 #ifdef DBG_DECODER
         pdec->dbg_decoder(2);
@@ -1892,23 +1968,14 @@ void loop() {
 void loop() {
     dbg("Waiting for signal");
     track.treset();
-    dbgf("sizeof(track) = %u", sizeof(track));
-    dbgf("sizeof(RawCode) = %u", sizeof(RawCode));
-    dbgf("sizeof(Section) = %u", sizeof(Section));
 
-    attachInterrupt(INT_RFINPUT, &handle_interrupt, CHANGE);
-    while (track.get_trk() != TRK_DATA) {
-        while (track.get_trk() != TRK_DATA && process_interrupt_timing(&track)) {
-        }
-
+    while (!track.do_events()) {
         delay(1);
     }
-    detachInterrupt(INT_RFINPUT);
 
-    dbgf("IH_max_pending_timings = %d", IH_max_pending_timings);
-    const RawCode *praw = track.get_rawcode();
+    dbgf("IH_max_pending_timings = %d", track.ih_get_max_pending_timings());
 
-    Decoder *pdec = decode_rawcode(praw);
+    Decoder *pdec = track.get_decoded_data();
     if (pdec) {
 #ifdef DBG_DECODER
         pdec->dbg_decoder(2);
@@ -1916,12 +1983,6 @@ void loop() {
         delete pdec;
     }
 
-#ifdef DBG_TIMINGS
-    for (unsigned int i = 0; i + 1 < ih_dbg_pos; i += 2) {
-        dbgf("%4u, %4u  |  %5u, %5u", ih_dbg_timings[i], ih_dbg_timings[i + 1],
-             ih_dbg_exec[i], ih_dbg_exec[i + 1]);
-    }
-#endif
 }
 
 #endif // !DBG_SIMULATE

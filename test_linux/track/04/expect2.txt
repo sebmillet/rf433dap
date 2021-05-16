@@ -10,5 +10,3 @@ IH_max_pending_timings = 11
       sep = 3868
       low:  [2] n =  8, v = 0x00000008
       high: [1] n =  8, v = 0x00000000
-IH_max_pending_timings = 11
-> nb_sections = 0, initseq = 0
