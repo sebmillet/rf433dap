@@ -3,12 +3,12 @@
 /*
   Copyright 2021 Sébastien Millet
 
-  rf433dap is free software: you can redistribute it and/or modify
+  `rf433decode' is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
   the Free Software Foundation, either version 3 of the License, or
   (at your option) any later version.
 
-  rf433dap is distributed in the hope that it will be useful,
+  `rf433decode' is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
   GNU General Public License for more details.
@@ -25,9 +25,6 @@
 
     // The below MUST be 2 or 3, as we attach an interrupt handler on it
 #define PIN_RFINPUT  2
-
-#include <Arduino.h>
-#include <avr/sleep.h>
 
 // ****************************************************************************
 // TESTPLAN *******************************************************************
@@ -69,7 +66,7 @@
 //#define DBG_TRACK
 //#define DBG_RAWCODE
 #define DBG_DECODER
-#define DBG_SMALL_RECORDED_T
+//#define DBG_SMALL_RECORDED_T
 
 #endif // TESTPLAN
 
@@ -80,8 +77,32 @@
 #endif
 
 #ifdef DEBUG
+
 #include "debug.h"
+
+#else
+
+#define dbg(a)
+#define dbgf(...)
+
 #endif
+
+#include <Arduino.h>
+
+#define assert(cond) { \
+    if (!(cond)) { \
+        assert_failed(__LINE__); \
+    } \
+}
+static void assert_failed(int line) {
+    Serial.print("rf433decode.ino");
+    Serial.print(":");
+    Serial.print(line);
+    Serial.print(":");
+    Serial.println(" assertion failed, aborted.");
+    while (1)
+        ;
+}
 
 #define MAX_DURATION     65535
 #define MAX_SEP_DURATION 65535
@@ -1233,7 +1254,7 @@ DecoderManchester::DecoderManchester(byte arg_convention)
     }
 }
 
-void DecoderManchester::add_buf(byte r) {
+inline void DecoderManchester::add_buf(byte r) {
     assert(buf_pos < sizeof(buf)  /sizeof(*buf));
     buf[buf_pos++] = r;
 }
@@ -1816,6 +1837,9 @@ Decoder* Track::get_decoded_data() {
             } while (!pdec && ++enum_decoders <= DEC_ID_END);
 
         }
+            // The last enumerated decoder is DecoderRawUnknownCoding, that
+            // never produces any error and MUST be chosen in the end (if no
+            // other worked).
         assert(pdec);
 
         pdec->set_t((pdec_head ? 0 : rawcode.initseq), psec->t);
@@ -1967,11 +1991,12 @@ void loop() {
 #ifndef DBG_SIMULATE
 void loop() {
     dbg("Waiting for signal");
-    track.treset();
 
+    track.treset();
     while (!track.do_events()) {
         delay(1);
     }
+    Serial.println("Got a signal");
 
     dbgf("IH_max_pending_timings = %d", track.ih_get_max_pending_timings());
 
