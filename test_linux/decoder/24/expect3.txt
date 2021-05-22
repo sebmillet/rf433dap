@@ -1,4 +1,5 @@
 [0] Sync 11
-    T=SYN, E=0, I=14916, S(lo)=356, L(lo)=356, S(hi)=364, L(hi)=364, P=3724
-[1] Received 32 bits: a1 1e 34 60
-    T=TRI, E=0, I=0, S=360, L=734, P=0
+    T=SYN, E=0, I=14916, S(lo)=348, L(lo)=348, S(hi)=364, L(hi)=364, P=3724
+[1] Unknown encoding: 66 signal bits
+    Signal: LS:SL:LS:SL:SL:SL:SL:LS:SL:SL:SL:LS:LS:LS:LS:SL:SL:SL:LS:LS:SL:LS:SL:SL:SL:LS:LS:SL:SL:SL:SL:SL:LL
+    T=UNK, E=0, I=0, S=356, L=734, P=0

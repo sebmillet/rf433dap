@@ -1,10 +1,6 @@
 IH_max_pending_timings = 6
-> nb_sections = 2, initseq = 9604
-  00  CONT
-      sep = 0
-      low:  [2] n = 32, v = 0xb6956d00
-      high: [2] n = 32, v = 0x496a92ff
-  01  SSEP
+> nb_sections = 1, initseq = 9604
+  00  SSEP
       sep = 7020
-      low:  [2] n =  1, v = 0x00000000
-      high: [2] n =  0, v = 0x00000000
+      low:  [2] n = 32, v = 0x6D2ADA00
+      high: [2] n = 31, v = 0x496A92FF

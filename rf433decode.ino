@@ -61,12 +61,12 @@
 // It is OK to update the below, because if this code is compiled, then we are
 // not in the test plan.
 
-//#define DBG_SIMULATE
-//#define DBG_TRACE
+#define DBG_SIMULATE
+#define DBG_TRACE
 //#define DBG_TIMINGS
-//#define DBG_TRACK
-//#define DBG_RAWCODE
-#define DBG_DECODER
+#define DBG_TRACK
+#define DBG_RAWCODE
+//#define DBG_DECODER
 //#define DBG_SMALL_RECORDED_T
 
 #endif // TESTPLAN
@@ -423,12 +423,12 @@ inline bool Band::test_value(uint16_t d) {
 #ifdef DBG_SMALL_RECORDED_T
 
 typedef uint8_t recorded_t;
-#define FMTRECORDEDT "%02x"
+#define FMTRECORDEDT "%02X"
 
 #else // DBG_SMALL_RECORDED_T
 
 typedef uint32_t recorded_t;
-#define FMTRECORDEDT "%08lx"
+#define FMTRECORDEDT "%08lX"
 
 #endif // DBG_SMALL_RECORDED_T
 
@@ -451,6 +451,7 @@ class Rail {
         Band b_short;
         Band b_long;
         Band b_sep;
+
         byte last_bit_recorded;
         recorded_t rec;
         byte status;
@@ -607,20 +608,21 @@ inline bool Rail::rail_eat(uint16_t d) {
         dbgf("R> rail terminated, status = %d", status);
 #endif
 
-        return false;
-    }
-
-    if (band_count == 2) {
-        if (b_short.got_it == b_long.got_it) {
-            assert(false);
-        }
-        last_bit_recorded = (b_short.got_it ? 0 : 1);
-        rec = (rec << 1) | last_bit_recorded;
     } else {
-        last_bit_recorded = 0;
-    }
-    if (++index == (sizeof(rec) << 3)) {
-        status = RAIL_FULL;
+
+        if (band_count == 2) {
+            if (b_short.got_it == b_long.got_it) {
+                assert(false);
+            }
+            last_bit_recorded = (b_short.got_it ? 0 : 1);
+            rec = (rec << 1) | last_bit_recorded;
+        } else {
+            last_bit_recorded = 0;
+        }
+        if (++index == (sizeof(rec) << 3)) {
+            status = RAIL_FULL;
+        }
+
     }
 
     return (status == RAIL_OPEN);
@@ -661,11 +663,22 @@ byte Rail::get_band_count() const {
 
 typedef enum {
     STS_CONTINUED,
+    STS_X_SEP,
     STS_SHORT_SEP,
     STS_LONG_SEP,
     STS_SEP_SEP,
     STS_ERROR
 } section_term_status_t;
+#ifdef DBG_RAWCODE
+const char *sts_names[] = {
+    "CONT",
+    "XSEP",
+    "SSEP",
+    "LSEP",
+    "2SEP",
+    "ERR"
+};
+#endif
 
 struct Timings {
     uint16_t low_short;
@@ -683,6 +696,10 @@ struct Section {
     unsigned char high_bits  :6;
     unsigned char high_bands :2;
 
+    uint16_t first_low;
+    uint16_t first_high;
+    uint16_t last_low;
+
     Timings t;
 
     section_term_status_t sts;
@@ -690,6 +707,7 @@ struct Section {
 
 struct RawCode {
     uint16_t initseq;
+    uint16_t max_code_d;
     byte nb_sections;
     Section sections[MAX_SECTIONS];
 
@@ -697,13 +715,6 @@ struct RawCode {
 };
 
 #ifdef DBG_RAWCODE
-const char *sts_names[] = {
-    "CONT",
-    "SSEP",
-    "LSEP",
-    "2SEP",
-    "ERR"
-};
 void RawCode::debug_rawcode() const {
     dbgf("> nb_sections = %d, initseq = %u",
             nb_sections, initseq);
@@ -852,6 +863,9 @@ class Decoder {
         byte nb_errors;
 
         uint16_t initseq;
+        uint16_t first_low;
+        uint16_t first_high;
+        uint16_t last_low;
         Timings t;
 
         Decoder *next;
@@ -871,7 +885,8 @@ class Decoder {
         virtual byte get_nb_bits() const;
 
         virtual void set_t(const uint16_t& arg_initseq, const Timings& arg_t);
-
+        virtual void decode_section(const Section *psec,
+                                    bool is_cont_of_prev_sec);
         virtual void attach_next(Decoder *pdec);
 
 #ifdef DBG_DECODER
@@ -887,6 +902,9 @@ Decoder::Decoder(byte arg_convention):
         convention(arg_convention),
         nb_errors(0),
         initseq(0),
+        first_low(0),
+        first_high(0),
+        last_low(0),
         next(nullptr) {
 
 }
@@ -1049,9 +1067,13 @@ void DecoderRawSync::dbg_decoder(byte disp_level, byte seq) const {
 class DecoderRawUnknownCoding: public Decoder {
     private:
         Signal unused_final_low;
+        bool terminates_with_sep;
 
     public:
-        DecoderRawUnknownCoding(): Decoder(CONVENTION_0) { }
+        DecoderRawUnknownCoding():
+                Decoder(CONVENTION_0),
+                unused_final_low(Signal::OTHER),
+                terminates_with_sep(false) { }
         ~DecoderRawUnknownCoding() { }
 
         virtual byte get_id() const override
@@ -1069,6 +1091,7 @@ void DecoderRawUnknownCoding::add_signal_step(Signal lo, Signal hi) {
         // See [COMMENT001]
     if (hi == Signal::OTHER) {
         unused_final_low = lo;
+        terminates_with_sep = true;
         return;
     }
 
@@ -1100,13 +1123,22 @@ void DecoderRawUnknownCoding::dbg_decoder(byte disp_level, byte seq) const {
         p += 3;
     }
     assert(p + 2 < sz);
-    if (unused_final_low == Signal::SHORT)
-        buf[p] = 'S';
-    else
-        buf[p] = 'L';
-    buf[p + 1] = 'P';
-    buf[p + 2] = '\0';
-    dbgf("    Signal: %s", buf);
+    if (terminates_with_sep) {
+        if (unused_final_low == Signal::SHORT)
+            buf[p] = 'S';
+        else
+            buf[p] = 'L';
+        buf[p + 1] = 'P';
+        buf[p + 2] = '\0';
+    } else {
+        if (!p)
+            buf[p] = '\0';
+        else
+            buf[p - 1] = '\0';
+    }
+    Serial.print("    Signal: ");
+    Serial.print(buf);
+    Serial.print("\n");
     delete buf;
 
     dbg_meta(disp_level);
@@ -1353,7 +1385,7 @@ unsigned int counter;
 #endif
 
 #define TRACK_MIN_INITSEQ_DURATION 4000
-#define TRACK_MIN_BITS             8
+#define TRACK_MIN_BITS             7
 
     // IMPORTANT
     //   IH_MASK must be equal to the size of IH_timings - 1.
@@ -1400,11 +1432,19 @@ class Track {
         static bool IH_interrupt_handler_is_attached;
 
         volatile trk_t trk;
+        byte count;
+
         Rail r_low;
         Rail r_high;
         byte prev_r;
 
+        uint16_t first_low;
+        uint16_t first_high;
+        uint16_t last_low;
+
         RawCode rawcode;
+
+        void reset_border_mgmt();
 
     public:
         Track(int arg_pin_number);
@@ -1453,7 +1493,6 @@ Track::Track(int arg_pin_number):pin_number(arg_pin_number) {
 inline void Track::treset() {
     trk = TRK_WAIT;
     rawcode.nb_sections = 0;
-    rawcode.initseq = 0;
 }
 
 void Track::ih_handle_interrupt() {
@@ -1494,11 +1533,21 @@ void Track::ih_handle_interrupt() {
 }
 
 void Track::force_stop_recv() {
+#ifdef DBG_TRACE
+    dbg("T> running force_stop_recv()");
+#endif
     if (get_trk() == TRK_RECV) {
         track_eat(0, 0);
         track_eat(1, 0);
         do_events();
     }
+}
+
+void Track::reset_border_mgmt() {
+    count = 0;
+    first_low = 0;
+    first_high = 0;
+    last_low = 0;
 }
 
 inline void Track::track_eat(byte r, uint16_t d) {
@@ -1513,6 +1562,8 @@ inline void Track::track_eat(byte r, uint16_t d) {
             r_high.rreset();
             prev_r = r;
             rawcode.initseq = d;
+            rawcode.max_code_d = d - (d >> 2);
+            reset_border_mgmt();
             trk = TRK_RECV;
         }
         return;
@@ -1527,11 +1578,47 @@ inline void Track::track_eat(byte r, uint16_t d) {
         d = 0;
     prev_r = r;
 
+    ++count;
+
+    if (count == 1) {
+        if ((d < BAND_MIN_D || d >= rawcode.max_code_d)
+            && count < TRACK_MIN_BITS && !rawcode.nb_sections) {
+            treset();
+                // WARNING
+                //   Re-entrant call... not ideal.
+            track_eat(r, d);
+        } else {
+            first_low = d;
+        }
+        return;
+    } else if (count == 2) {
+        if ((d < BAND_MIN_D || d >= rawcode.max_code_d)
+            && count < TRACK_MIN_BITS && !rawcode.nb_sections) {
+            treset();
+                // WARNING
+                //   Re-entrant call... not ideal.
+            track_eat(r, d);
+        } else {
+            first_high = d;
+        }
+        return;
+    }
+
     Rail *prail = (r == 0 ? &r_low : &r_high);
     if (prail->status != RAIL_OPEN)
         return;
 
-    bool b = prail->rail_eat(d);
+    if (r == 0)
+        last_low = d;
+
+    bool b;
+    if ((d < BAND_MIN_D || d >= rawcode.max_code_d)
+        && count < TRACK_MIN_BITS) {
+        b = false;
+    } else {
+        b = prail->rail_eat(d);
+    }
+
     if (r == 1 && (!b || r_low.status != RAIL_OPEN)) {
 
 #ifdef DBG_TRACE
@@ -1547,10 +1634,11 @@ inline void Track::track_eat(byte r, uint16_t d) {
         if (r_low.status == RAIL_FULL && r_high.status == RAIL_FULL) {
             sts = STS_CONTINUED;
         } else if (r_high.status == RAIL_STP_RCVD) {
-            if (r_low.status == RAIL_CLOSED || r_low.status == RAIL_FULL) {
+            if (r_low.status == RAIL_CLOSED || r_low.status == RAIL_FULL
+                    || r_low.status == RAIL_ERROR) { // FIXME (RAIL_ERROR)
                 sts = (r_low.last_bit_recorded ? STS_LONG_SEP : STS_SHORT_SEP);
             } else if (r_low.status == RAIL_STP_RCVD) {
-                sts = STS_SEP_SEP;
+                sts = STS_SEP_SEP; // FIXME (Need STS_X_SEP)
             } else {
                 sts = STS_ERROR;
             }
@@ -1671,6 +1759,10 @@ Notations:
             psec->high_bits = r_high.index;
             psec->high_bands = r_high.get_band_count();
 
+            psec->first_low = first_low;
+            psec->first_high = first_high;
+            psec->last_low = last_low;
+
             trk = ((rawcode.nb_sections == MAX_SECTIONS) ? TRK_DATA : TRK_RECV);
 
             if (trk == TRK_RECV) {
@@ -1679,6 +1771,9 @@ Notations:
 #endif
                 r_low.rreset_soft();
                 r_high.rreset_soft();
+                if (sts != STS_CONTINUED) {
+                    reset_border_mgmt();
+                }
             } else {
 #ifdef DBG_TRACE
                 dbg("T> stop receiving (data)");
@@ -1784,6 +1879,62 @@ bool Track::do_events() {
     return false;
 }
 
+void Decoder::decode_section(const Section *psec, bool is_cont_of_prev_sec) {
+    if (!is_cont_of_prev_sec) {
+        first_low = psec->first_low;
+        first_high = psec->first_high;
+        last_low = psec->last_low;
+
+        Signal e[2];
+        for (short i = 0; i < 2; ++i) {
+            uint16_t d = (i == 0 ? first_low : first_high);
+            uint16_t short_d = (i == 0 ? psec->t.low_short : psec->t.high_short);
+            uint16_t long_d = (i == 0 ? psec->t.low_long : psec->t.high_long);
+            Band b_short;
+            Band b_long;
+            b_short.init(short_d);
+            b_long.init(long_d);
+            b_short.sup = (b_short.mid + b_long.mid) >> 1;
+            b_long.inf = b_short.sup + 1;
+            bool is_short = b_short.test_value(d);
+            bool is_long = b_long.test_value(d);
+            if (is_short && !is_long) {
+                e[i] = Signal::SHORT;
+            } else if (!is_short && is_long) {
+                e[i] = Signal::LONG;
+            } else {
+                e[i] = Signal::OTHER;
+            }
+        }
+
+        if (e[0] != Signal::OTHER && e[1] != Signal::OTHER) {
+            add_signal_step(e[0], e[1]);
+            first_low = 0;
+            first_high = 0;
+        }
+    }
+
+    byte pos_low = psec->low_bits;
+    byte pos_high = psec->high_bits;
+
+    while (pos_low >= 1 || pos_high >= 1) {
+        Signal sd_low = Signal::OTHER;
+        Signal sd_high = Signal::OTHER;
+        if (pos_low >= 1) {
+            --pos_low;
+            sd_low = ((((recorded_t)1 << pos_low) & psec->low_rec) ?
+                        Signal::LONG : Signal::SHORT);
+        }
+        if (pos_high >= 1) {
+            --pos_high;
+            sd_high =
+                ((((recorded_t)1 << pos_high) & psec->high_rec) ?
+                Signal::LONG : Signal::SHORT);
+        }
+        add_signal_step(sd_low, sd_high);
+    }
+}
+
 Decoder* Track::get_decoded_data() {
     Decoder *pdec_head = nullptr;
     Decoder *pdec_tail = nullptr;
@@ -1807,7 +1958,7 @@ Decoder* Track::get_decoded_data() {
             if (pdec) {
                 pdec->add_sync(n);
             } else {
-                pdec = new DecoderRawSync(n);
+                pdec = new DecoderRawSync(n + 1); // FIXME
             }
 
         } else if (psec->low_bands == 1 || psec->high_bands == 1) {
@@ -1822,25 +1973,8 @@ Decoder* Track::get_decoded_data() {
                 if (!pdec)
                     pdec = Decoder::build_decoder(enum_decoders);
 
-                byte pos_low = psec->low_bits;
-                byte pos_high = psec->high_bits;
+                pdec->decode_section(psec, is_continuation_of_prev_section);
 
-                while (pos_low >= 1 || pos_high >= 1) {
-                    Signal sd_low = Signal::OTHER;
-                    Signal sd_high = Signal::OTHER;
-                    if (pos_low >= 1) {
-                        --pos_low;
-                        sd_low = ((((recorded_t)1 << pos_low) & psec->low_rec) ?
-                                    Signal::LONG : Signal::SHORT);
-                    }
-                    if (pos_high >= 1) {
-                        --pos_high;
-                        sd_high =
-                            ((((recorded_t)1 << pos_high) & psec->high_rec) ?
-                            Signal::LONG : Signal::SHORT);
-                    }
-                    pdec->add_signal_step(sd_low, sd_high);
-                }
                 if (!is_continuation_of_prev_section && pdec->get_nb_errors()) {
                     delete pdec;
                     pdec = nullptr;
@@ -2007,14 +2141,13 @@ void loop() {
     while (!track.do_events()) {
         delay(1);
     }
-    Serial.println("Got a signal");
-
-    dbgf("IH_max_pending_timings = %d", track.ih_get_max_pending_timings());
+//    Serial.println("Got a signal");
+//    dbgf("IH_max_pending_timings = %d", track.ih_get_max_pending_timings());
 
     Decoder *pdec = track.get_decoded_data();
     if (pdec) {
 #ifdef DBG_DECODER
-        pdec->dbg_decoder(1);
+        pdec->dbg_decoder(2);
 #endif
         delete pdec;
     }

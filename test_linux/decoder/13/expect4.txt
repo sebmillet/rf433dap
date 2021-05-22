@@ -1,6 +1,6 @@
 [0] Received 33 bits: 00 7e dc 56 78
-    T=MAN, E=0, I=5436, S=1162, L=2270, P=6724
+    T=MAN, E=0, I=5436, S=1180, L=2270, P=6724
 [1] Received 28 bits(!): 03 f6 e2 a3
-    T=MAN, E=4, I=0, S=1162, L=2270, P=6740
-[2] Received 20 bits: 03 f6 e2
-    T=MAN, E=0, I=0, S=1162, L=2270, P=0
+    T=MAN, E=4, I=0, S=1180, L=2270, P=6740
+[2] Received 10 bits: 00 fd
+    T=MAN, E=0, I=0, S=1180, L=2270, P=0
