@@ -36,7 +36,7 @@ for ((i=START; i<=STOP; i++)); do
         expfile="${d}/expect${i}.txt"
         ./exectest.sh "${inpfile}" "${tmpout}" "${PORT}"
         echo -n "$i:${d}"
-        if cmp "${expfile}" "${tmpout}" > /dev/null; then
+        if cmp "${expfile}" "${tmpout}" > /dev/null 2> /dev/null; then
             PASSED=$((PASSED + 1))
             echo "    test ok"
         else

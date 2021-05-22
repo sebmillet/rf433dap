@@ -61,13 +61,13 @@
 // It is OK to update the below, because if this code is compiled, then we are
 // not in the test plan.
 
-#define DBG_SIMULATE
-#define DBG_TRACE
+//#define DBG_SIMULATE
+//#define DBG_TRACE
 //#define DBG_TIMINGS
-#define DBG_TRACK
-#define DBG_RAWCODE
-//#define DBG_DECODER
-//#define DBG_SMALL_RECORDED_T
+//#define DBG_TRACK
+//#define DBG_RAWCODE
+#define DBG_DECODER
+#define DBG_SMALL_RECORDED_T
 
 #endif // TESTPLAN
 
@@ -887,6 +887,9 @@ class Decoder {
         virtual void set_t(const uint16_t& arg_initseq, const Timings& arg_t);
         virtual void decode_section(const Section *psec,
                                     bool is_cont_of_prev_sec);
+        virtual void take_into_account_first_low_high(const Section *psec,
+                                    bool is_cont_of_prev_sec);
+
         virtual void attach_next(Decoder *pdec);
 
 #ifdef DBG_DECODER
@@ -965,7 +968,8 @@ void Decoder::dbg_meta(byte disp_level) const {
         dbgf("    T=%s, E=%u, I=%u, S=%u, L=%u, P=%u", dec_id_names[get_id()],
                 nb_errors, initseq, t.low_short, t.low_long, t.sep);
     } else {
-        dbgf("    T=%s, E=%u, I=%u, S(lo)=%u, L(lo)=%u, S(hi)=%u, L(hi)=%u, P=%u",
+        dbgf("    T=%s, E=%u, I=%u, S(lo)=%u, L(lo)=%u, "
+                "S(hi)=%u, L(hi)=%u, P=%u",
                 dec_id_names[get_id()], nb_errors, initseq,
                 t.low_short, t.low_long, t.high_short, t.high_long, t.sep);
     }
@@ -1014,16 +1018,18 @@ class DecoderRawSync: public Decoder {
     private:
         byte nb_low_high;
         Signal sync_shape;
+        bool sync_shape_set;
 
     public:
         DecoderRawSync(byte arg_nb_low_high):
                 Decoder(CONVENTION_0),
-                nb_low_high(arg_nb_low_high) { }
+                nb_low_high(arg_nb_low_high),
+                sync_shape_set(false) { }
         ~DecoderRawSync() { }
 
         virtual byte get_id() const override { return DEC_ID_RAW_SYNC; }
 
-        virtual void add_signal_step(Signal lo, Signal hi);
+        virtual void add_signal_step(Signal lo, Signal hi) override;
 
         virtual void add_sync(byte n) override;
 
@@ -1034,8 +1040,10 @@ class DecoderRawSync: public Decoder {
 };
 
 void DecoderRawSync::add_signal_step(Signal lo, Signal hi) {
-    if (!nb_low_high)
+    if (!sync_shape_set) {
         sync_shape = lo;
+        sync_shape_set = true;
+    }
 
     if (lo != sync_shape) {
         ++nb_errors;
@@ -1879,40 +1887,50 @@ bool Track::do_events() {
     return false;
 }
 
-void Decoder::decode_section(const Section *psec, bool is_cont_of_prev_sec) {
-    if (!is_cont_of_prev_sec) {
-        first_low = psec->first_low;
-        first_high = psec->first_high;
-        last_low = psec->last_low;
+void Decoder::take_into_account_first_low_high(const Section *psec,
+        bool is_cont_of_prev_sec) {
+    if (is_cont_of_prev_sec)
+        return;
+    first_low = psec->first_low;
+    first_high = psec->first_high;
+    last_low = psec->last_low;
 
-        Signal e[2];
-        for (short i = 0; i < 2; ++i) {
-            uint16_t d = (i == 0 ? first_low : first_high);
-            uint16_t short_d = (i == 0 ? psec->t.low_short : psec->t.high_short);
-            uint16_t long_d = (i == 0 ? psec->t.low_long : psec->t.high_long);
-            Band b_short;
-            Band b_long;
-            b_short.init(short_d);
-            b_long.init(long_d);
-            b_short.sup = (b_short.mid + b_long.mid) >> 1;
-            b_long.inf = b_short.sup + 1;
-            bool is_short = b_short.test_value(d);
-            bool is_long = b_long.test_value(d);
-            if (is_short && !is_long) {
-                e[i] = Signal::SHORT;
-            } else if (!is_short && is_long) {
-                e[i] = Signal::LONG;
-            } else {
-                e[i] = Signal::OTHER;
-            }
-        }
+    Signal e[2];
+    for (short i = 0; i < 2; ++i) {
+        uint16_t d = (i == 0 ? first_low : first_high);
+        uint16_t short_d = (i == 0 ? psec->t.low_short : psec->t.high_short);
+        uint16_t long_d = (i == 0 ? psec->t.low_long : psec->t.high_long);
+        Band b_short;
+        Band b_long;
+        b_short.init(short_d);
+        b_long.init(long_d);
 
-        if (e[0] != Signal::OTHER && e[1] != Signal::OTHER) {
-            add_signal_step(e[0], e[1]);
-            first_low = 0;
-            first_high = 0;
+//        b_short.sup = (b_short.mid + b_long.mid) >> 1;
+//        b_long.inf = b_short.sup + 1;
+
+        bool is_short = b_short.test_value(d);
+        bool is_long = b_long.test_value(d);
+
+        if (is_short && !is_long) {
+            e[i] = Signal::SHORT;
+        } else if (!is_short && is_long) {
+            e[i] = Signal::LONG;
+        } else if (is_short && is_long && short_d == long_d) {
+            e[i] = Signal::SHORT;
+        } else {
+            e[i] = Signal::OTHER;
         }
     }
+
+    if (e[0] != Signal::OTHER && e[1] != Signal::OTHER) {
+        add_signal_step(e[0], e[1]);
+        first_low = 0;
+        first_high = 0;
+    }
+}
+
+void Decoder::decode_section(const Section *psec, bool is_cont_of_prev_sec) {
+    take_into_account_first_low_high(psec, is_cont_of_prev_sec);
 
     byte pos_low = psec->low_bits;
     byte pos_high = psec->high_bits;
@@ -1958,7 +1976,8 @@ Decoder* Track::get_decoded_data() {
             if (pdec) {
                 pdec->add_sync(n);
             } else {
-                pdec = new DecoderRawSync(n + 1); // FIXME
+                pdec = new DecoderRawSync(n); // FIXME
+                pdec->take_into_account_first_low_high(psec, false);
             }
 
         } else if (psec->low_bands == 1 || psec->high_bands == 1) {
