@@ -871,15 +871,15 @@ class Decoder {
         Decoder *next;
 
         void add_data_bit(byte valbit);
+        virtual void add_signal_step(Signal low, Signal high) = 0;
 
     public:
         Decoder(byte arg_convention);
         virtual ~Decoder();
         virtual byte get_id() const = 0;
 
-        static Decoder *build_decoder(byte id);
+        static Decoder *build_decoder(byte id, byte convention);
 
-        virtual void add_signal_step(Signal low, Signal high) = 0;
         virtual void add_sync(byte n) { }
         virtual byte get_nb_errors() const;
         virtual byte get_nb_bits() const;
@@ -933,6 +933,72 @@ byte Decoder::get_nb_bits() const { return data.get_nb_bits(); }
 void Decoder::set_t(const uint16_t& arg_initseq, const Timings& arg_t) {
     initseq = arg_initseq;
     t = arg_t;
+}
+
+void Decoder::take_into_account_first_low_high(const Section *psec,
+        bool is_cont_of_prev_sec) {
+    if (is_cont_of_prev_sec)
+        return;
+    first_low = psec->first_low;
+    first_high = psec->first_high;
+    last_low = psec->last_low;
+
+    Signal e[2];
+    for (short i = 0; i < 2; ++i) {
+        uint16_t d = (i == 0 ? first_low : first_high);
+        uint16_t short_d = (i == 0 ? psec->t.low_short : psec->t.high_short);
+        uint16_t long_d = (i == 0 ? psec->t.low_long : psec->t.high_long);
+        Band b_short;
+        Band b_long;
+        b_short.init(short_d);
+        b_long.init(long_d);
+
+//        b_short.sup = (b_short.mid + b_long.mid) >> 1;
+//        b_long.inf = b_short.sup + 1;
+
+        bool is_short = b_short.test_value(d);
+        bool is_long = b_long.test_value(d);
+
+        if (is_short && !is_long) {
+            e[i] = Signal::SHORT;
+        } else if (!is_short && is_long) {
+            e[i] = Signal::LONG;
+        } else if (is_short && is_long && short_d == long_d) {
+            e[i] = Signal::SHORT;
+        } else {
+            e[i] = Signal::OTHER;
+        }
+    }
+
+    if (e[0] != Signal::OTHER && e[1] != Signal::OTHER) {
+        add_signal_step(e[0], e[1]);
+        first_low = 0;
+        first_high = 0;
+    }
+}
+
+void Decoder::decode_section(const Section *psec, bool is_cont_of_prev_sec) {
+    take_into_account_first_low_high(psec, is_cont_of_prev_sec);
+
+    byte pos_low = psec->low_bits;
+    byte pos_high = psec->high_bits;
+
+    while (pos_low >= 1 || pos_high >= 1) {
+        Signal sd_low = Signal::OTHER;
+        Signal sd_high = Signal::OTHER;
+        if (pos_low >= 1) {
+            --pos_low;
+            sd_low = ((((recorded_t)1 << pos_low) & psec->low_rec) ?
+                        Signal::LONG : Signal::SHORT);
+        }
+        if (pos_high >= 1) {
+            --pos_high;
+            sd_high =
+                ((((recorded_t)1 << pos_high) & psec->high_rec) ?
+                Signal::LONG : Signal::SHORT);
+        }
+        add_signal_step(sd_low, sd_high);
+    }
 }
 
 #ifdef DBG_DECODER
@@ -1372,16 +1438,16 @@ void DecoderManchester::dbg_decoder(byte disp_level, byte seq) const {
 // * ********************** ***************************************************
 
 // Must be located here, so that classes are defined
-Decoder* Decoder::build_decoder(byte id) {
+Decoder* Decoder::build_decoder(byte id, byte convention) {
     switch (id) {
         case DEC_ID_RAW_SYNC:
             return new DecoderRawSync(0);
         case DEC_ID_TRIBIT:
-            return new DecoderTriBit();
+            return new DecoderTriBit(convention);
         case DEC_ID_TRIBIT_INV:
-            return new DecoderTriBitInv();
+            return new DecoderTriBitInv(convention);
         case DEC_ID_MANCHESTER:
-            return new DecoderManchester();
+            return new DecoderManchester(convention);
         case DEC_ID_RAW_UNKNOWN_CODING:
             return new DecoderRawUnknownCoding();
         default:
@@ -1496,7 +1562,7 @@ class Track {
         bool process_interrupt_timing();
         bool do_events();
 
-        Decoder* get_decoded_data();
+        Decoder* get_decoded_data(byte convention = CONVENTION_0);
 };
 
 #ifdef DBG_TIMINGS
@@ -1903,73 +1969,7 @@ bool Track::do_events() {
     return false;
 }
 
-void Decoder::take_into_account_first_low_high(const Section *psec,
-        bool is_cont_of_prev_sec) {
-    if (is_cont_of_prev_sec)
-        return;
-    first_low = psec->first_low;
-    first_high = psec->first_high;
-    last_low = psec->last_low;
-
-    Signal e[2];
-    for (short i = 0; i < 2; ++i) {
-        uint16_t d = (i == 0 ? first_low : first_high);
-        uint16_t short_d = (i == 0 ? psec->t.low_short : psec->t.high_short);
-        uint16_t long_d = (i == 0 ? psec->t.low_long : psec->t.high_long);
-        Band b_short;
-        Band b_long;
-        b_short.init(short_d);
-        b_long.init(long_d);
-
-//        b_short.sup = (b_short.mid + b_long.mid) >> 1;
-//        b_long.inf = b_short.sup + 1;
-
-        bool is_short = b_short.test_value(d);
-        bool is_long = b_long.test_value(d);
-
-        if (is_short && !is_long) {
-            e[i] = Signal::SHORT;
-        } else if (!is_short && is_long) {
-            e[i] = Signal::LONG;
-        } else if (is_short && is_long && short_d == long_d) {
-            e[i] = Signal::SHORT;
-        } else {
-            e[i] = Signal::OTHER;
-        }
-    }
-
-    if (e[0] != Signal::OTHER && e[1] != Signal::OTHER) {
-        add_signal_step(e[0], e[1]);
-        first_low = 0;
-        first_high = 0;
-    }
-}
-
-void Decoder::decode_section(const Section *psec, bool is_cont_of_prev_sec) {
-    take_into_account_first_low_high(psec, is_cont_of_prev_sec);
-
-    byte pos_low = psec->low_bits;
-    byte pos_high = psec->high_bits;
-
-    while (pos_low >= 1 || pos_high >= 1) {
-        Signal sd_low = Signal::OTHER;
-        Signal sd_high = Signal::OTHER;
-        if (pos_low >= 1) {
-            --pos_low;
-            sd_low = ((((recorded_t)1 << pos_low) & psec->low_rec) ?
-                        Signal::LONG : Signal::SHORT);
-        }
-        if (pos_high >= 1) {
-            --pos_high;
-            sd_high =
-                ((((recorded_t)1 << pos_high) & psec->high_rec) ?
-                Signal::LONG : Signal::SHORT);
-        }
-        add_signal_step(sd_low, sd_high);
-    }
-}
-
-Decoder* Track::get_decoded_data() {
+Decoder* Track::get_decoded_data(byte convention) {
     Decoder *pdec_head = nullptr;
     Decoder *pdec_tail = nullptr;
     Decoder *pdec = nullptr;
@@ -1992,7 +1992,7 @@ Decoder* Track::get_decoded_data() {
             if (pdec) {
                 pdec->add_sync(n);
             } else {
-                pdec = new DecoderRawSync(n); // FIXME
+                pdec = new DecoderRawSync(n);
                 pdec->take_into_account_first_low_high(psec, false);
             }
 
@@ -2006,7 +2006,7 @@ Decoder* Track::get_decoded_data() {
             bool is_continuation_of_prev_section = pdec;
             do {
                 if (!pdec)
-                    pdec = Decoder::build_decoder(enum_decoders);
+                    pdec = Decoder::build_decoder(enum_decoders, convention);
 
                 pdec->decode_section(psec, is_continuation_of_prev_section);
 
@@ -2176,8 +2176,6 @@ void loop() {
     while (!track.do_events()) {
         delay(1);
     }
-//    Serial.println("Got a signal");
-//    dbgf("IH_max_pending_timings = %d", track.ih_get_max_pending_timings());
 
     Decoder *pdec = track.get_decoded_data();
     if (pdec) {
