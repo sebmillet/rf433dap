@@ -67,7 +67,7 @@
 //#define DBG_TRACK
 //#define DBG_RAWCODE
 #define DBG_DECODER
-#define DBG_SMALL_RECORDED_T
+//#define DBG_SMALL_RECORDED_T
 
 #endif // TESTPLAN
 
@@ -964,14 +964,30 @@ void Decoder::dbg_data(byte seq) const {
 void Decoder::dbg_meta(byte disp_level) const {
     if (disp_level <= 1)
         return;
-    if (!t.high_short && !t.high_long) {
-        dbgf("    T=%s, E=%u, I=%u, S=%u, L=%u, P=%u", dec_id_names[get_id()],
-                nb_errors, initseq, t.low_short, t.low_long, t.sep);
+    if (!first_low && !first_high) {
+        if (!t.high_short && !t.high_long) {
+            dbgf("    T=%s, E=%u, I=%u, S=%u, L=%u, P=%u, Z=%u",
+                    dec_id_names[get_id()], nb_errors, initseq,
+                    t.low_short, t.low_long, t.sep, last_low);
+        } else {
+            dbgf("    T=%s, E=%u, I=%u, S(lo)=%u, L(lo)=%u, "
+                    "S(hi)=%u, L(hi)=%u, P=%u, Z=%u", dec_id_names[get_id()],
+                    nb_errors, initseq, t.low_short, t.low_long,
+                    t.high_short, t.high_long, t.sep, last_low);
+        }
     } else {
-        dbgf("    T=%s, E=%u, I=%u, S(lo)=%u, L(lo)=%u, "
-                "S(hi)=%u, L(hi)=%u, P=%u",
-                dec_id_names[get_id()], nb_errors, initseq,
-                t.low_short, t.low_long, t.high_short, t.high_long, t.sep);
+        if (!t.high_short && !t.high_long) {
+            dbgf("    T=%s, E=%u, I=%u, S=%u, L=%u, P=%u, U=%u, V=%u, Z=%u",
+                    dec_id_names[get_id()], nb_errors, initseq,
+                    t.low_short, t.low_long, t.sep,
+                    first_low, first_high, last_low);
+        } else {
+            dbgf("    T=%s, E=%u, I=%u, S(lo)=%u, L(lo)=%u, "
+                    "S(hi)=%u, L(hi)=%u, P=%u, U=%u, V=%u, Z=%u",
+                    dec_id_names[get_id()], nb_errors, initseq,
+                    t.low_short, t.low_long, t.high_short, t.high_long, t.sep,
+                    first_low, first_high, last_low);
+        }
     }
 }
 
