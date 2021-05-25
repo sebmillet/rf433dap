@@ -889,6 +889,7 @@ class Decoder {
                                     bool is_cont_of_prev_sec);
         virtual void take_into_account_first_low_high(const Section *psec,
                                     bool is_cont_of_prev_sec);
+        virtual uint16_t first_lo_ignored() const;
 
         virtual void attach_next(Decoder *pdec);
 
@@ -1001,6 +1002,10 @@ void Decoder::decode_section(const Section *psec, bool is_cont_of_prev_sec) {
     }
 }
 
+uint16_t Decoder::first_lo_ignored() const {
+    return 0;
+}
+
 #ifdef DBG_DECODER
 void Decoder::dbg_data(byte seq) const {
     if (data.get_nb_bits()) {
@@ -1032,27 +1037,29 @@ void Decoder::dbg_meta(byte disp_level) const {
         return;
     if (!first_low && !first_high) {
         if (!t.high_short && !t.high_long) {
-            dbgf("    T=%s, E=%u, I=%u, S=%u, L=%u, P=%u, Z=%u",
-                    dec_id_names[get_id()], nb_errors, initseq,
-                    t.low_short, t.low_long, t.sep, last_low);
+            dbgf("    T=%s, E=%u, I=%u, S=%u, L=%u, P=%u, Y=%u, Z=%u",
+                    dec_id_names[get_id()], nb_errors, initseq, t.low_short,
+                    t.low_long, t.sep, first_lo_ignored(), last_low);
         } else {
             dbgf("    T=%s, E=%u, I=%u, S(lo)=%u, L(lo)=%u, "
-                    "S(hi)=%u, L(hi)=%u, P=%u, Z=%u", dec_id_names[get_id()],
-                    nb_errors, initseq, t.low_short, t.low_long,
-                    t.high_short, t.high_long, t.sep, last_low);
+                    "S(hi)=%u, L(hi)=%u, P=%u, Y=%u, Z=%u",
+                    dec_id_names[get_id()], nb_errors, initseq, t.low_short,
+                    t.low_long, t.high_short, t.high_long, t.sep,
+                    first_lo_ignored(), last_low);
         }
     } else {
         if (!t.high_short && !t.high_long) {
-            dbgf("    T=%s, E=%u, I=%u, S=%u, L=%u, P=%u, U=%u, V=%u, Z=%u",
-                    dec_id_names[get_id()], nb_errors, initseq,
-                    t.low_short, t.low_long, t.sep,
-                    first_low, first_high, last_low);
+            dbgf("    T=%s, E=%u, I=%u, S=%u, L=%u, P=%u, U=%u, "
+                        "V=%u, Y=%u, Z=%u",
+                    dec_id_names[get_id()], nb_errors, initseq, t.low_short,
+                    t.low_long, t.sep, first_low, first_high,
+                    first_lo_ignored(), last_low);
         } else {
             dbgf("    T=%s, E=%u, I=%u, S(lo)=%u, L(lo)=%u, "
-                    "S(hi)=%u, L(hi)=%u, P=%u, U=%u, V=%u, Z=%u",
+                    "S(hi)=%u, L(hi)=%u, P=%u, U=%u, V=%u, Y=%u, Z=%u",
                     dec_id_names[get_id()], nb_errors, initseq,
                     t.low_short, t.low_long, t.high_short, t.high_long, t.sep,
-                    first_low, first_high, last_low);
+                    first_low, first_high, first_lo_ignored(), last_low);
         }
     }
 }
@@ -1178,7 +1185,6 @@ class DecoderRawUnknownCoding: public Decoder {
 };
 
 void DecoderRawUnknownCoding::add_signal_step(Signal lo, Signal hi) {
-        // See [COMMENT001]
     if (hi == Signal::OTHER) {
         unused_final_low = lo;
         terminates_with_sep = true;
@@ -1242,9 +1248,6 @@ void DecoderRawUnknownCoding::dbg_decoder(byte disp_level, byte seq) const {
 // * ************* ************************************************************
 
 class DecoderTriBit: public Decoder {
-    private:
-        Signal unused_final_low;
-
     public:
         DecoderTriBit(byte arg_convention = CONVENTION_0)
                 :Decoder(arg_convention) {
@@ -1262,14 +1265,8 @@ class DecoderTriBit: public Decoder {
 };
 
 void DecoderTriBit::add_signal_step(Signal lo, Signal hi) {
-        // [COMMENT001]
-        // The below case corresponds to the reception of (short, sep) or
-        // (long, sep), meaning, the low signal is meaningful whereas the high
-        // signal has no encoding meaning.
-    if (hi == Signal::OTHER) {
-        unused_final_low = lo;
+    if (hi == Signal::OTHER)
         return;
-    }
 
     byte valbit;
     if (lo == Signal::SHORT && hi == Signal::LONG)
@@ -1306,13 +1303,16 @@ class DecoderTriBitInv: public Decoder {
     public:
         DecoderTriBitInv(byte arg_convention = CONVENTION_0)
                 :Decoder(arg_convention),
-                first_call_to_add_sgn_lo_hi(true) {
+                first_call_to_add_sgn_lo_hi(true),
+                unused_initial_low(Signal::OTHER) {
         }
         ~DecoderTriBitInv() { }
 
         virtual byte get_id() const override { return DEC_ID_TRIBIT_INV; }
         virtual void add_signal_step(Signal low, Signal high)
             override;
+
+        virtual uint16_t first_lo_ignored() const override;
 
 #ifdef DBG_DECODER
         virtual void dbg_decoder(byte disp_level, byte seq) const override;
@@ -1345,6 +1345,20 @@ void DecoderTriBitInv::add_signal_step(Signal lo, Signal hi) {
     last_hi = hi;
 }
 
+uint16_t DecoderTriBitInv::first_lo_ignored() const {
+    switch (unused_initial_low) {
+        case Signal::OTHER:
+            return 0;
+        case Signal::SHORT:
+            return t.low_short;
+        case Signal::LONG:
+            return t.low_long;
+        default:
+            assert(false);
+    };
+    return 0; // Never executed
+}
+
 #ifdef DBG_DECODER
 void DecoderTriBitInv::dbg_decoder(byte disp_level, byte seq) const {
     dbg_data(seq);
@@ -1362,6 +1376,12 @@ class DecoderManchester: public Decoder {
     private:
         byte buf[3];
         byte buf_pos;
+            // Manchester encoding comes with a mandatory leading 'short low'
+            // (otherwise we could not distinguish it from the initialization
+            // sequence).
+            // Said differently: Manchester needs a leading '0' bit (if
+            // considering low-then-high is '0'), that is not part of data.
+        bool leading_lo_hi_has_been_passed;
 
         void add_buf(byte r);
         void consume_buf();
@@ -1381,7 +1401,9 @@ class DecoderManchester: public Decoder {
 };
 
 DecoderManchester::DecoderManchester(byte arg_convention)
-        :Decoder(arg_convention),buf_pos(0) {
+        :Decoder(arg_convention),
+        buf_pos(0),
+        leading_lo_hi_has_been_passed(false) {
     for (byte i = 0; i < sizeof(buf) / sizeof(*buf); ++i) {
         buf[i] = 0;
     }
@@ -1394,14 +1416,21 @@ inline void DecoderManchester::add_buf(byte r) {
 
 void DecoderManchester::consume_buf() {
     if (buf_pos >= 2) {
-        if (buf[0] == 0 && buf[1] == 1) {
-            add_data_bit(convention);
-        } else if (buf[0] == 1 && buf[1] == 0) {
-            add_data_bit(!convention);
+        if (leading_lo_hi_has_been_passed) {
+            if (buf[0] == 0 && buf[1] == 1) {
+                add_data_bit(convention);
+            } else if (buf[0] == 1 && buf[1] == 0) {
+                add_data_bit(!convention);
+            } else {
+                    // FIXME: créer register_error pour gérer ça de manière
+                    // cohérente entre les différents descendants de Decoder.
+                ++nb_errors;
+            }
         } else {
-                // FIXME: créer register_error pour gérer ça de manière
-                // cohérente entre les différents descendants de Decoder.
-            ++nb_errors;
+            if (buf[0] != 0 || buf[1] != 1) {
+                ++nb_errors;
+            }
+            leading_lo_hi_has_been_passed = true;
         }
             // Not always necessary, but harmless if done while not necessary
         buf[0] = buf[2];
