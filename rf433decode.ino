@@ -30,25 +30,25 @@
 // TESTPLAN *******************************************************************
 #if TESTPLAN == 1
 
-#define DBG_SIMULATE
-#define DBG_TRACK
+#define RF433DECODE_DBG_SIMULATE
+#define RF433DECODE_DBG_TRACK
 
 #elif TESTPLAN == 2 // TESTPLAN
 
-#define DBG_SIMULATE
-#define DBG_RAWCODE
+#define RF433DECODE_DBG_SIMULATE
+#define RF433DECODE_DBG_RAWCODE
 
 #elif TESTPLAN == 3 // TESTPLAN
 
-#define DBG_SIMULATE
-#define DBG_DECODER
+#define RF433DECODE_DBG_SIMULATE
+#define RF433DECODE_DBG_DECODER
 
 #elif TESTPLAN == 4 // TESTPLAN
 
-#define DBG_SIMULATE
-#define DBG_DECODER
-#define DBG_SMALL_RECORDED_T
-#define MAX_SECTIONS 12
+#define RF433DECODE_DBG_SIMULATE
+#define RF433DECODE_DBG_DECODER
+#define RF433DECODE_DBG_SMALL_RECORDED>
+#define RF433DECODE_MAX_SECTIONS 12
 
 #else // TESTPLAN
 
@@ -61,19 +61,19 @@
 // It is OK to update the below, because if this code is compiled, then we are
 // not in the test plan.
 
-//#define DBG_SIMULATE
+//#define RF433DECODE_DBG_SIMULATE
 //#define DBG_TRACE
 //#define DBG_TIMINGS
-//#define DBG_TRACK
-//#define DBG_RAWCODE
-//#define DBG_DECODER
-//#define DBG_SMALL_RECORDED_T
+//#define RF433DECODE_DBG_TRACK
+//#define RF433DECODE_DBG_RAWCODE
+//#define RF433DECODE_DBG_DECODER
+//#define RF433DECODE_DBG_SMALL_RECORDED>
 
 #endif // TESTPLAN
 
-#if defined(DBG_SIMULATE) || defined(DBG_TRACE) || defined(DBG_TIMINGS) \
-    || defined(DBG_TRACK) || defined(DBG_RAWCODE) \
-    || defined(DBG_DECODER)
+#if defined(RF433DECODE_DBG_SIMULATE) || defined(DBG_TRACE) \
+    || defined(DBG_TIMINGS) || defined(RF433DECODE_DBG_TRACK) \
+    || defined(RF433DECODE_DBG_RAWCODE) || defined(RF433DECODE_DBG_DECODER)
 #define DEBUG
 #endif
 
@@ -107,12 +107,12 @@ static void assert_failed(int line) {
 
 #define MAX_DURATION     65535
 #define MAX_SEP_DURATION 65535
-#ifndef MAX_SECTIONS
-#define MAX_SECTIONS     8
+#ifndef RF433DECODE_MAX_SECTIONS
+#define RF433DECODE_MAX_SECTIONS     8
 #endif
 
 
-#ifdef DBG_SIMULATE
+#ifdef RF433DECODE_DBG_SIMULATE
 
 // * ********************** ***************************************************
 // * Read input from serial ***************************************************
@@ -221,7 +221,7 @@ void SerialLine::get_line_blocking(char *s, size_t len) {
         ;
 }
 
-#endif // DBG_SIMULATE
+#endif // RF433DECODE_DBG_SIMULATE
 
 
 // * ******************** *****************************************************
@@ -418,21 +418,21 @@ inline bool Band::test_value(uint16_t d) {
 // * Rail *********************************************************************
 // * **** *********************************************************************
 
-#ifdef DBG_SIMULATE
+#ifdef RF433DECODE_DBG_SIMULATE
 
-#ifdef DBG_SMALL_RECORDED_T
+#ifdef RF433DECODE_DBG_SMALL_RECORDED>
 
 typedef uint8_t recorded_t;
 #define FMTRECORDEDT "%02X"
 
-#else // DBG_SMALL_RECORDED_T
+#else // RF433DECODE_DBG_SMALL_RECORDED>
 
 typedef uint32_t recorded_t;
 #define FMTRECORDEDT "%08lX"
 
-#endif // DBG_SMALL_RECORDED_T
+#endif // RF433DECODE_DBG_SMALL_RECORDED>
 
-#else // DBG_SIMULATE
+#else // RF433DECODE_DBG_SIMULATE
 
 typedef uint16_t recorded_t;
 #define FMTRECORDEDT "%04lx"
@@ -469,7 +469,7 @@ class Rail {
         bool rail_eat(uint16_t d);
         void rreset();
         void rreset_soft();
-#ifdef DBG_TRACK
+#ifdef RF433DECODE_DBG_TRACK
         void rail_debug() const;
 #endif
         byte get_band_count() const;
@@ -637,7 +637,7 @@ inline bool Rail::rail_eat(uint16_t d) {
     return (status == RAIL_OPEN);
 }
 
-#ifdef DBG_TRACK
+#ifdef RF433DECODE_DBG_TRACK
 const char* status_names[] = {
     "open",
     "full",
@@ -678,7 +678,7 @@ typedef enum {
     STS_SEP_SEP,
     STS_ERROR
 } section_term_status_t;
-#ifdef DBG_RAWCODE
+#ifdef RF433DECODE_DBG_RAWCODE
 const char *sts_names[] = {
     "CONT",
     "XSEP",
@@ -718,12 +718,12 @@ struct RawCode {
     uint16_t initseq;
     uint16_t max_code_d;
     byte nb_sections;
-    Section sections[MAX_SECTIONS];
+    Section sections[RF433DECODE_MAX_SECTIONS];
 
     void debug_rawcode() const;
 };
 
-#ifdef DBG_RAWCODE
+#ifdef RF433DECODE_DBG_RAWCODE
 void RawCode::debug_rawcode() const {
     dbgf("> nb_sections = %d, initseq = %u",
             nb_sections, initseq);
@@ -895,7 +895,7 @@ enum class Signal {
                                     // produce a successful result.
 #define DEC_ID_END                5 // End of enumeration of real decoders
 
-#ifdef DBG_DECODER
+#ifdef RF433DECODE_DBG_DECODER
 const char *dec_id_names[] = {
     "INC",
     "SYN",
@@ -949,7 +949,7 @@ class Decoder {
         virtual BitVector* take_away_data();
         virtual Decoder* get_next() const { return next; }
 
-#ifdef DBG_DECODER
+#ifdef RF433DECODE_DBG_DECODER
         virtual void dbg_data(byte seq) const;
         virtual void dbg_meta(byte disp_level) const;
         virtual void dbg_decoder(byte disp_level = 1, byte seq = 0) const
@@ -1073,7 +1073,7 @@ BitVector* Decoder::take_away_data() {
         return nullptr;
 }
 
-#ifdef DBG_DECODER
+#ifdef RF433DECODE_DBG_DECODER
 void Decoder::dbg_data(byte seq) const {
     char *buf = pdata->to_str();
     if (buf) {
@@ -1138,12 +1138,12 @@ class DecoderRawInconsistent: public Decoder {
 
         virtual void add_signal_step(Signal lo, Signal hi) override { }
 
-#ifdef DBG_DECODER
+#ifdef RF433DECODE_DBG_DECODER
         virtual void dbg_decoder(byte disp_level, byte seq) const override;
 #endif
 };
 
-#ifdef DBG_DECODER
+#ifdef RF433DECODE_DBG_DECODER
 void DecoderRawInconsistent::dbg_decoder(byte disp_level, byte seq) const {
     dbgf("[%d] Inconsistent signal", seq);
     dbg_meta(disp_level);
@@ -1175,7 +1175,7 @@ class DecoderRawSync: public Decoder {
 
         virtual void add_sync(byte n) override;
 
-#ifdef DBG_DECODER
+#ifdef RF433DECODE_DBG_DECODER
         virtual void dbg_decoder(byte disp_level, byte seq) const override;
 #endif
 
@@ -1201,7 +1201,7 @@ void DecoderRawSync::add_sync(byte n) {
     nb_low_high += n;
 }
 
-#ifdef DBG_DECODER
+#ifdef RF433DECODE_DBG_DECODER
 void DecoderRawSync::dbg_decoder(byte disp_level, byte seq) const {
     dbgf("[%d] Sync %d", seq, nb_low_high);
     dbg_meta(disp_level);
@@ -1231,7 +1231,7 @@ class DecoderRawUnknownCoding: public Decoder {
 
         virtual void add_signal_step(Signal lo, Signal hi) override;
 
-#ifdef DBG_DECODER
+#ifdef RF433DECODE_DBG_DECODER
         virtual void dbg_decoder(byte disp_level, byte seq) const override;
 #endif
 
@@ -1250,7 +1250,7 @@ void DecoderRawUnknownCoding::add_signal_step(Signal lo, Signal hi) {
     }
 }
 
-#ifdef DBG_DECODER
+#ifdef RF433DECODE_DBG_DECODER
 void DecoderRawUnknownCoding::dbg_decoder(byte disp_level, byte seq) const {
     dbgf("[%d] Unknown encoding: %d signal bits", seq, pdata->get_nb_bits());
 
@@ -1313,7 +1313,7 @@ class DecoderTriBit: public Decoder {
 
         virtual bool has_data_with_no_error() const override;
 
-#ifdef DBG_DECODER
+#ifdef RF433DECODE_DBG_DECODER
         virtual void dbg_decoder(byte disp_level, byte seq) const override;
 #endif
 
@@ -1337,10 +1337,11 @@ void DecoderTriBit::add_signal_step(Signal lo, Signal hi) {
 }
 
 bool DecoderTriBit::has_data_with_no_error() const {
-    return pdata->get_nb_bits() >= DECODER_MIN_BITS_HAS_DATA_WITH_NO_ERROR && !nb_errors;
+    return pdata->get_nb_bits() >= DECODER_MIN_BITS_HAS_DATA_WITH_NO_ERROR
+           && !nb_errors;
 }
 
-#ifdef DBG_DECODER
+#ifdef RF433DECODE_DBG_DECODER
 void DecoderTriBit::dbg_decoder(byte disp_level, byte seq) const {
     dbg_data(seq);
     dbg_meta(disp_level);
@@ -1375,7 +1376,7 @@ class DecoderTriBitInv: public Decoder {
 
         virtual uint16_t first_lo_ignored() const override;
 
-#ifdef DBG_DECODER
+#ifdef RF433DECODE_DBG_DECODER
         virtual void dbg_decoder(byte disp_level, byte seq) const override;
 #endif
 
@@ -1407,7 +1408,8 @@ void DecoderTriBitInv::add_signal_step(Signal lo, Signal hi) {
 }
 
 bool DecoderTriBitInv::has_data_with_no_error() const {
-    return pdata->get_nb_bits() >= DECODER_MIN_BITS_HAS_DATA_WITH_NO_ERROR && !nb_errors;
+    return pdata->get_nb_bits() >= DECODER_MIN_BITS_HAS_DATA_WITH_NO_ERROR
+           && !nb_errors;
 }
 
 uint16_t DecoderTriBitInv::first_lo_ignored() const {
@@ -1424,7 +1426,7 @@ uint16_t DecoderTriBitInv::first_lo_ignored() const {
     return 0; // Never executed
 }
 
-#ifdef DBG_DECODER
+#ifdef RF433DECODE_DBG_DECODER
 void DecoderTriBitInv::dbg_decoder(byte disp_level, byte seq) const {
     dbg_data(seq);
     dbg_meta(disp_level);
@@ -1461,7 +1463,7 @@ class DecoderManchester: public Decoder {
 
         virtual bool has_data_with_no_error() const override;
 
-#ifdef DBG_DECODER
+#ifdef RF433DECODE_DBG_DECODER
         virtual void dbg_decoder(byte disp_level, byte seq) const override;
 #endif
 
@@ -1521,10 +1523,11 @@ void DecoderManchester::add_signal_step(Signal lo, Signal hi) {
 }
 
 bool DecoderManchester::has_data_with_no_error() const {
-    return pdata->get_nb_bits() >= DECODER_MIN_BITS_HAS_DATA_WITH_NO_ERROR && !nb_errors;
+    return pdata->get_nb_bits() >= DECODER_MIN_BITS_HAS_DATA_WITH_NO_ERROR
+           && !nb_errors;
 }
 
-#ifdef DBG_DECODER
+#ifdef RF433DECODE_DBG_DECODER
 void DecoderManchester::dbg_decoder(byte disp_level, byte seq) const {
     dbg_data(seq);
     dbg_meta(disp_level);
@@ -1561,7 +1564,7 @@ Decoder* Decoder::build_decoder(byte id, byte convention) {
 // * Track ********************************************************************
 // * ***** ********************************************************************
 
-#ifdef DBG_SIMULATE
+#ifdef RF433DECODE_DBG_SIMULATE
 SerialLine sl;
 char buffer[SerialLine::buf_len];
 
@@ -1646,7 +1649,7 @@ class Track {
 
         void treset();
         void track_eat(byte r, uint16_t d);
-#ifdef DBG_TRACK
+#ifdef RF433DECODE_DBG_TRACK
         void track_debug() const;
 #endif
 #ifdef DBG_TIMINGS
@@ -1692,7 +1695,7 @@ void Track::ih_handle_interrupt() {
     static unsigned long last_t = 0;
     const unsigned long t = micros();
 
-#ifdef DBG_SIMULATE
+#ifdef RF433DECODE_DBG_SIMULATE
     unsigned long d;
     byte r = sim_int_count % 2;
     if (sim_int_count >= sim_timings_count) {
@@ -1889,7 +1892,7 @@ Notations:
 
         bool record_current_section;
 
-#ifdef DBG_TRACK
+#ifdef RF433DECODE_DBG_TRACK
         bool do_track_debug = false;
         (void)do_track_debug;
 #endif
@@ -1901,14 +1904,14 @@ Notations:
                  && rawcode.sections[rawcode.nb_sections - 1].sts
                     == STS_CONTINUED);
 
-#ifdef DBG_TRACK
+#ifdef RF433DECODE_DBG_TRACK
             do_track_debug = record_current_section;
 #endif
 
         } else {
             record_current_section = (sts != STS_ERROR);
 
-#ifdef DBG_TRACK
+#ifdef RF433DECODE_DBG_TRACK
             do_track_debug = true;
 #endif
 
@@ -1917,7 +1920,7 @@ Notations:
 #ifdef DBG_TRACE
         dbgf("T> reccursec=%i, sts=%i", record_current_section, sts);
 #endif
-#if defined(DBG_SIMULATE) && defined(DBG_TRACK)
+#if defined(RF433DECODE_DBG_SIMULATE) && defined(RF433DECODE_DBG_TRACK)
         if (do_track_debug) {
             dbgf("%s  {", counter >= 2 ? ",\n" : "");
             dbgf("    \"N\":%d,\"start\":%u,\"end\":%u,",
@@ -1965,7 +1968,8 @@ Notations:
             psec->first_high = first_high;
             psec->last_low = last_low;
 
-            trk = ((rawcode.nb_sections == MAX_SECTIONS) ? TRK_DATA : TRK_RECV);
+            trk = ((rawcode.nb_sections == RF433DECODE_MAX_SECTIONS)
+                    ? TRK_DATA : TRK_RECV);
 
             if (trk == TRK_RECV) {
 #ifdef DBG_TRACE
@@ -2048,7 +2052,7 @@ bool Track::process_interrupt_timing() {
 }
 
 void Track::activate_recording() {
-#ifndef DBG_SIMULATE
+#ifndef RF433DECODE_DBG_SIMULATE
     if (!IH_interrupt_handler_is_attached) {
         attachInterrupt(digitalPinToInterrupt(pin_number), &ih_handle_interrupt,
                 CHANGE);
@@ -2058,7 +2062,7 @@ void Track::activate_recording() {
 }
 
 void Track::deactivate_recording() {
-#ifndef DBG_SIMULATE
+#ifndef RF433DECODE_DBG_SIMULATE
     if (IH_interrupt_handler_is_attached) {
         detachInterrupt(digitalPinToInterrupt(pin_number));
         IH_interrupt_handler_is_attached = false;
@@ -2072,7 +2076,7 @@ bool Track::do_events() {
         ;
     if (get_trk() == TRK_DATA) {
         deactivate_recording();
-#ifdef DBG_RAWCODE
+#ifdef RF433DECODE_DBG_RAWCODE
         dbgf("IH_max_pending_timings = %d", ih_get_max_pending_timings());
         rawcode.debug_rawcode();
 #endif
@@ -2160,7 +2164,7 @@ void Track::dbg_timings() const {
 }
 #endif
 
-#ifdef DBG_TRACK
+#ifdef RF433DECODE_DBG_TRACK
 const char* trk_names[] = {
     "TRK_WAIT",
     "TRK_RECV",
@@ -2193,7 +2197,7 @@ void setup() {
 
 Track track(PIN_RFINPUT);
 
-#ifdef DBG_SIMULATE
+#ifdef RF433DECODE_DBG_SIMULATE
 void read_simulated_timings_from_usb() {
     sim_timings_count = 0;
     sim_int_count = 0;
@@ -2237,7 +2241,7 @@ void loop() {
     if (!counter) {
         delay(100);
         dbg("----- BEGIN TEST -----");
-#ifdef DBG_TRACK
+#ifdef RF433DECODE_DBG_TRACK
         dbg("[");
 #endif
     }
@@ -2258,7 +2262,7 @@ void loop() {
     track.dbg_timings();
 #endif
 
-#ifdef DBG_TRACK
+#ifdef RF433DECODE_DBG_TRACK
     if (sim_int_count >= sim_timings_count) {
         dbg("]");
     }
@@ -2266,7 +2270,7 @@ void loop() {
 
     Decoder *pdec = track.get_decoded_data();
     if (pdec) {
-#ifdef DBG_DECODER
+#ifdef RF433DECODE_DBG_DECODER
         pdec->dbg_decoder(2);
 #endif
         delete pdec;
@@ -2276,9 +2280,9 @@ void loop() {
         dbg("----- END TEST -----");
     }
 }
-#endif // DBG_SIMULATE
+#endif // RF433DECODE_DBG_SIMULATE
 
-#ifndef DBG_SIMULATE
+#ifndef RF433DECODE_DBG_SIMULATE
 bool print_msg = true;
 void loop() {
     if (print_msg)
@@ -2293,7 +2297,7 @@ void loop() {
     Decoder *pdec = pdec0;
     print_msg = false;
     while(pdec) {
-#ifndef DBG_DECODER
+#ifndef RF433DECODE_DBG_DECODER
         if (pdec->has_data_with_no_error()) {
             print_msg = true;
             BitVector *pdata = pdec->take_away_data();
@@ -2318,6 +2322,6 @@ void loop() {
     delete pdec0;
 }
 
-#endif // !DBG_SIMULATE
+#endif // !RF433DECODE_DBG_SIMULATE
 
 // vim: ts=4:sw=4:tw=80:et
