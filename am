@@ -16,10 +16,12 @@
 # 1.4  Adds -t (--testplan) option, to set TESTPLAN macro
 # 1.5  -t (or --testplan) now comes with a value, so as to manage multiple test
 #      plans.
+# 1.6  Updated to work fine with Arch arduino package instead of the manually
+#      installed (from tar.gz source) package used so far.
 
 set -euo pipefail
 
-VERSION=1.5
+VERSION=1.6
 
 PORT=
 BOARD=
