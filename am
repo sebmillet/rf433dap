@@ -18,10 +18,12 @@
 #      plans.
 # 1.6  Updated to work fine with Arch arduino package instead of the manually
 #      installed (from tar.gz source) package used so far.
+# 1.7  Renames archlinux-arduino back to arduino, and created corresponding
+#      symlink (was cleaner to do s).
 
 set -euo pipefail
 
-VERSION=1.6
+VERSION=1.7
 
 PORT=
 BOARD=
@@ -211,9 +213,9 @@ fi
 
 if [ -z "${FQBN}" ]; then
     if [ "${BOARD}" == "uno" ]; then
-        FQBN="archlinux-arduino:avr:uno"
+        FQBN="arduino:avr:uno"
     elif [ "${BOARD}" == "nano" ]; then
-        FQBN="archlinux-arduino:avr:nano:cpu=atmega328old"
+        FQBN="arduino:avr:nano:cpu=atmega328old"
     else
         echo "FATAL #003, CHECK THIS CODE"
         exit 99
