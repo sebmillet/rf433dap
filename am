@@ -140,11 +140,13 @@ if [ -n "${BOARD}" ]; then
     fi
 fi
 
-ARDUINODIR=$(LANG='' type -a arduino \
-                | tail -n 1 \
-                | sed 's/\S\+\sis\s//')
-ARDUINODIR=$(readlink -f "${ARDUINODIR}")
-ARDUINODIR=$(dirname "${ARDUINODIR}")
+#ARDUINODIR=$(LANG='' type -a arduino \
+#                | tail -n 1 \
+#                | sed 's/\S\+\sis\s//')
+#ARDUINODIR=$(readlink -f "${ARDUINODIR}")
+#ARDUINODIR=$(dirname "${ARDUINODIR}")
+
+ARDUINODIR=/usr/share/arduino
 
 COUNTUNO=$(compgen -G '/dev/ttyACM*' | wc -l)
 COUNTNANO=$(compgen -G '/dev/ttyUSB*' | wc -l)
@@ -207,9 +209,9 @@ fi
 
 if [ -z "${FQBN}" ]; then
     if [ "${BOARD}" == "uno" ]; then
-        FQBN="arduino:avr:uno"
+        FQBN="archlinux-arduino:avr:uno"
     elif [ "${BOARD}" == "nano" ]; then
-        FQBN="arduino:avr:nano:cpu=atmega328old"
+        FQBN="archlinux-arduino:avr:nano:cpu=atmega328old"
     else
         echo "FATAL #003, CHECK THIS CODE"
         exit 99
@@ -297,8 +299,7 @@ FILEBASENAME=${FILE##*/}
 
 if [ "${UPLOAD}" == "yes" ]; then
     echo "-- Upload"
-    "${ARDUINODIR}/hardware/tools/avr/bin/avrdude" \
-      -C"${ARDUINODIR}/hardware/tools/avr/etc/avrdude.conf" \
+    "/usr/bin/avrdude" \
       -q -q -patmega328p -carduino -P"${PORT}" -b"${SPEED}" -D \
       -Uflash:w:"${BUILDDIR}/${FILEBASENAME}".hex:i
 fi
